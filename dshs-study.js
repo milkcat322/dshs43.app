@@ -1278,7 +1278,7 @@ function ttFind(q) {
 }
 function ttSearchHtml() {
   return `<div class="tt-search">
-      <input class="study-input" id="ttQ" placeholder="이름 · 학번 · 반 · 과목 검색 (예: 김민준, 1203, 3반, 물리)" autocomplete="off" enterkeyhint="search">
+      <input class="study-input" id="ttQ" placeholder="이름 · 학번 · 반 · 과목 검색 (예: 유준우, 1409, 물리)" autocomplete="off" enterkeyhint="search">
       <div class="tt-sugg" id="ttSugg"></div>
     </div>`;
 }
