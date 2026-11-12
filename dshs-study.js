@@ -203,7 +203,7 @@ function openStart() {
   else if (otherCohort()) openOtherCohort();
   else if (me && opened === "assignments") openAsgLink(q.get("asg"));
   else if (me && opened === "feedback") openFeedbackLink();
-  else if (me) openStudy("cal");
+  else if (me) openStudy("tt");   // 42기 사이트처럼 내 시간표(이름 · 위치 · 학점 계산 · 배경화면)로 시작
 }
 
 // ---------- 다른 기수 계정 ----------
@@ -1076,8 +1076,8 @@ async function saveStatus(loc) {
   toast(loc ? `내 위치: ${loc}` : "위치를 지웠어요");
   loadStatus(true);
 }
-// 로그인 직후 첫 화면: 학생은 내 일정, 관리자 계정은 관리자 사이트 안내, 다른 기수 학생은 그 기수 사이트 안내
-const openHome = () => (me.is_admin ? openAdminMoved() : otherCohort() ? openOtherCohort() : openStudy("cal"));
+// 로그인 직후 첫 화면: 학생은 내 시간표, 관리자 계정은 관리자 사이트 안내, 다른 기수 학생은 그 기수 사이트 안내
+const openHome = () => (me.is_admin ? openAdminMoved() : otherCohort() ? openOtherCohort() : openStudy("tt"));
 
 async function logout() {
   await forgetPush();   // 이 기기로 다음 사람의 알림이 오지 않도록, 로그아웃하기 전에 서버 등록만 지웁니다
@@ -1178,32 +1178,275 @@ const PAGE_VIEW = { tt: "tt", cal: "feed", notice: "notice", todo: "todo", meal:
 const TIMETABLE_43 = {};
 const TT_DAYS = ["월", "화", "수", "목", "금"];
 const TT_PERIODS = 9;   // 정규 수업 1~9교시 (야간 자습 10~12교시는 빼고)
-function renderTimetable() {
+// 1학년은 모든 과목이 필수(보통기본필수)입니다.
+const SUBJ_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#60a5fa", "#fb923c", "#facc15", "#6ee7b7", "#c4b5fd", "#fca5a5", "#a5b4fc", "#5eead4", "#fbbf24"];
+const subjColor = (subject) => SUBJ_COLORS[Math.max(0, SUBJECTS_43.findIndex(([s]) => s === subject)) % SUBJ_COLORS.length];
+const semesterLabel = () => { const m = new Date().getMonth() + 1; return m >= 3 && m < 8 ? "1학기" : "2학기"; };
+let ttTab = "tt";   // 시간표 탭 안의 칸: tt 시간표 · gpa 학점 계산 · subj 과목 목록 · wp 배경화면
+
+function ttGridHtml() {
   const empty = !Object.keys(TIMETABLE_43).length;
   const today = TT_DAYS[new Date().getDay() - 1];
   const rows = Array.from({ length: TT_PERIODS }, (_, i) => {
     const p = i + 1, [s, e] = PERIOD_TIME[p];
     return `<tr><th class="tt-p"><b>${p}</b><small>${s}<br>${e}</small></th>${TT_DAYS.map((d) => {
       const subj = TIMETABLE_43[`${d}-${p}`];
-      return `<td class="${d === today ? "tt-today" : ""}">${subj ? esc(subj) : ""}</td>`;
+      const c = subj ? subjColor(subj) : "";
+      return `<td class="${d === today ? "tt-today" : ""}">${subj ? `<span class="tt-cell" style="background:${c}22;border-color:${c}66;color:${c}">${esc(subj)}</span>` : ""}</td>`;
     }).join("")}</tr>`;
   }).join("");
-  $("studyView").innerHTML = `
-    <div class="study-head">
-      <div>
-        <h2>시간표</h2>
-        <div class="study-sub">${empty ? "43기 시간표가 나오면 여기에 채워져요" : "43기 시간표"}</div>
-      </div>
-    </div>
-    <div class="tt-wrap">
+  return `<div class="tt-wrap">
       <table class="tt-grid">
         <thead><tr><th></th>${TT_DAYS.map((d) => `<th class="${d === today ? "tt-today" : ""}">${d}</th>`).join("")}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      ${empty ? `<div class="tt-empty">아직 시간표가 없어요</div>` : ""}
+      ${empty ? `<div class="tt-empty">43기 시간표가 나오면 채워져요</div>` : ""}
+    </div>`;
+}
+
+function ttSubjectsHtml() {
+  return `<div class="credit-sum">
+      <div class="num">${TOTAL_CREDITS}</div>
+      <div class="tx"><b>이수 학점 합계</b><br>${SUBJECTS_43.length}과목 · 1학년 ${semesterLabel()} · 모두 필수 과목</div>
     </div>
-    <div class="study-section">듣는 과목 ${SUBJECTS_43.length}개 · ${TOTAL_CREDITS}학점</div>
-    <div class="tt-subjects">${SUBJECTS_43.map(([subject, credits]) => `<span class="tt-subj">${esc(subject)}<small>${credits}학점</small></span>`).join("")}</div>`;
+    <div class="classes-grid">${SUBJECTS_43.map(([s, c]) => `<div class="class-card"><div class="class-dot" style="background:${subjColor(s)}"></div>
+      <div class="class-card-name">${esc(s)}</div><div class="class-credit">${c}학점</div><div class="class-card-ban">필수</div></div>`).join("")}</div>`;
+}
+
+function renderTimetable() {
+  const sid = me?.student_id;
+  const name = me?.name || "";
+  const weekly = Object.keys(TIMETABLE_43).length;
+  $("studyView").innerHTML = `
+    <div class="student-profile">
+      <div class="student-avatar">${esc(name[0] || "?")}</div>
+      <div class="student-info"><h2>${esc(name)}</h2><div class="student-meta">학번 ${esc(sid ?? "")} · 1학년 ${semesterLabel()}</div></div>
+    </div>
+    ${sid ? '<div class="my-status" id="myStatus"></div>' : ""}
+    <div class="stats-row">
+      <div class="stat-chip"><span class="stat-num">${SUBJECTS_43.length}</span><span class="stat-label">수강 과목</span></div>
+      <div class="stat-chip"><span class="stat-num" style="color:var(--accent3)">${TOTAL_CREDITS}</span><span class="stat-label">이수 학점</span></div>
+      <div class="stat-chip"><span class="stat-num">${weekly || "–"}</span><span class="stat-label">주간 수업 교시</span></div>
+    </div>
+    <div class="tabs">
+      ${[["tt", "📅 시간표"], ["gpa", "🎓 학점 계산"], ["subj", "📚 과목 목록"], ["wp", "🖼 배경화면"]].map(([k, l]) =>
+        `<button class="tab-btn${ttTab === k ? " active" : ""}" data-ttab="${k}">${l}</button>`).join("")}
+    </div>
+    <div class="tab-panel${ttTab === "tt" ? " active" : ""}" id="panel-tt">${ttGridHtml()}</div>
+    <div class="tab-panel${ttTab === "gpa" ? " active" : ""}" id="panel-gpa"></div>
+    <div class="tab-panel${ttTab === "subj" ? " active" : ""}" id="panel-subj">${ttSubjectsHtml()}</div>
+    <div class="tab-panel${ttTab === "wp" ? " active" : ""}" id="panel-wp">${wpPanelHtml()}</div>`;
+  $("studyView").querySelectorAll("[data-ttab]").forEach((b) => b.onclick = () => {
+    ttTab = b.dataset.ttab;
+    $("studyView").querySelectorAll("[data-ttab]").forEach((x) => x.classList.toggle("active", x === b));
+    $("studyView").querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${ttTab}`));
+    if (ttTab === "wp") generateWallpaper();
+  });
+  renderGpa();
+  bindWallpaper();
+  if (ttTab === "wp") generateWallpaper();
+  if ($("myStatus")) { paintMyStatus(); maybePushCard(); }
+}
+
+// ---------- 학점 계산 ----------
+// 1학년은 모두 필수 과목이라 12과목 모두 평균에 들어갑니다. (과목 학점 × 평점) 합 ÷ 고른 과목 학점 합.
+// 고른 등급은 이 기기에 학번별로 저장합니다 (처음엔 모두 A+).
+const GRADES = [["A+", 4.3], ["A0", 4.0], ["A-", 3.7], ["B+", 3.3], ["B0", 3.0], ["B-", 2.7], ["C+", 2.3], ["C0", 2.0], ["C-", 1.7], ["F", 0]];
+const GRADE_PT = Object.fromEntries(GRADES);
+const gpaKey = () => `gpa43:${me?.student_id || "guest"}`;
+function gpaLoad() {
+  try {
+    const raw = localStorage.getItem(gpaKey());
+    if (raw != null) return JSON.parse(raw) || {};
+  } catch {}
+  return Object.fromEntries(SUBJECTS_43.map(([s]) => [s, "A+"]));
+}
+function gpaSave(st) { try { localStorage.setItem(gpaKey(), JSON.stringify(st)); } catch {} }
+function renderGpa() {
+  const box = $("panel-gpa");
+  if (!box) return;
+  const st = gpaLoad();
+  let cred = 0, pts = 0;
+  for (const [s, c] of SUBJECTS_43) if (st[s] in GRADE_PT) { cred += c; pts += c * GRADE_PT[st[s]]; }
+  box.innerHTML = `
+    <div class="gpa-hero">
+      <div><div class="gpa-big">${cred ? (pts / cred).toFixed(2) : "–"}</div><div class="gpa-max">/ 4.30</div></div>
+      <div class="gpa-hero-tx"><b>평균 학점</b><br>입력한 ${cred}학점 기준 · 전체 ${TOTAL_CREDITS}학점<br>${cred < TOTAL_CREDITS
+        ? `<span style="color:var(--text-muted)">아직 ${TOTAL_CREDITS - cred}학점이 미입력이에요</span>` : '<span style="color:var(--accent3)">모든 과목 입력 완료</span>'}</div>
+    </div>
+    ${SUBJECTS_43.map(([s, c]) => `<div class="gpa-row">
+      <div class="gpa-head"><span class="gpa-name">${esc(s)}</span><span class="gpa-cred">${c}학점</span></div>
+      <div class="gpa-grades">${GRADES.map(([g]) => `<button class="gpa-g${st[s] === g ? " on" : ""}${g === "F" ? " none" : ""}" data-gs="${esc(s)}" data-gg="${g}">${g}</button>`).join("")}</div>
+    </div>`).join("")}
+    <div class="gpa-actions">
+      <button class="gpa-act" id="gpaAll">전부 A+로</button>
+      <button class="gpa-act" id="gpaClear">전체 해제</button>
+    </div>
+    <div class="gpa-note"><b>계산 방식</b> — (과목 학점 × 등급 평점)을 모두 더한 뒤, 등급을 고른 과목의 학점 합으로 나눠요. 1학년은 모든 과목이 필수라 12과목이 모두 들어가요. 등급을 고르지 않은 과목은 계산에서 빠지고, 같은 등급을 다시 누르면 해제돼요. 고른 등급은 이 기기에만 저장돼요.</div>`;
+  box.querySelectorAll("[data-gs]").forEach((b) => b.onclick = () => {
+    const cur = gpaLoad();
+    if (cur[b.dataset.gs] === b.dataset.gg) delete cur[b.dataset.gs]; else cur[b.dataset.gs] = b.dataset.gg;
+    gpaSave(cur); renderGpa();
+  });
+  $("gpaAll").onclick = () => { gpaSave(Object.fromEntries(SUBJECTS_43.map(([s]) => [s, "A+"]))); renderGpa(); };
+  $("gpaClear").onclick = () => { gpaSave({}); renderGpa(); };
+}
+
+// ---------- 배경화면 ----------
+// 시간표를 휴대폰 · 태블릿 배경화면 크기의 그림으로 만들어 저장합니다 (42기 사이트와 같은 방식).
+// 시간표가 아직 없으면 빈 칸으로 그려집니다.
+const WP_DAY_COLORS = ["#a78bfa", "#60a5fa", "#34d399", "#fb923c", "#f472b6"];
+const WP_SIZES = [
+  ["자동", [["auto", "내 기기 화면 크기"]]],
+  ["아이폰", [["1179x2556", "iPhone 14·15·16 (1179×2556)"], ["1290x2796", "iPhone Pro Max (1290×2796)"], ["1170x2532", "iPhone 12·13 (1170×2532)"], ["750x1334", "iPhone SE·7·8 (750×1334)"]]],
+  ["아이패드 (세로)", [["2048x2732", "iPad Pro 12.9·13 (2048×2732)"], ["1668x2388", "iPad Pro 11 (1668×2388)"], ["1640x2360", "iPad Air 11 (1640×2360)"], ["1620x2160", "iPad 9·10세대 (1620×2160)"], ["1488x2266", "iPad mini (1488×2266)"]]],
+  ["아이패드 (가로)", [["2732x2048", "iPad Pro 12.9·13 가로 (2732×2048)"], ["2388x1668", "iPad Pro 11 가로 (2388×1668)"], ["2360x1640", "iPad Air 11 가로 (2360×1640)"], ["2160x1620", "iPad 9·10세대 가로 (2160×1620)"], ["2266x1488", "iPad mini 가로 (2266×1488)"]]],
+  ["안드로이드", [["1080x2340", "Android FHD+ (1080×2340)"], ["1440x3120", "Android QHD+ (1440×3120)"], ["1080x1920", "Android 16:9 (1080×1920)"], ["1600x2560", "Android 태블릿 (1600×2560)"]]],
+];
+const wp = { size: "auto", layout: "lock", theme: "dark", canvas: null };
+function wpPanelHtml() {
+  const opts = WP_SIZES.map(([g, items]) => `<optgroup label="${g}">${items.map(([v, l]) => `<option value="${v}"${wp.size === v ? " selected" : ""}>${l}</option>`).join("")}</optgroup>`).join("");
+  const chip = (k, v, l) => `<button class="wp-chip${wp[k] === v ? " on" : ""}" data-wp="${k}" data-wv="${v}">${l}</button>`;
+  return `
+    <div class="wp-controls">
+      <div><div class="wp-group-label">해상도</div><select class="wp-select" id="wpSize">${opts}</select></div>
+      <div><div class="wp-group-label">배치</div><div class="wp-chips">${chip("layout", "lock", "🔒 잠금화면 (시계 여백)")}${chip("layout", "home", "📱 홈화면 (꽉 채움)")}</div></div>
+      <div><div class="wp-group-label">테마</div><div class="wp-chips">${chip("theme", "dark", "🌙 다크")}${chip("theme", "light", "☀️ 라이트")}</div></div>
+    </div>
+    <div class="wp-preview-area">
+      <div class="wp-frame"><img id="wpPreview" alt="배경화면 미리보기"></div>
+      <div class="wp-size-note" id="wpSizeNote">—</div>
+      <button class="wp-save" id="wpSave">⬇ 배경화면 저장하기</button>
+    </div>
+    <div class="wp-tip">
+      <strong>아이폰</strong>이면 저장이 안 될 때 위 미리보기를 <strong>길게 눌러 "사진에 추가"</strong>를 선택하세요.<br>
+      저장 후 <strong>설정 → 배경화면</strong>에서 사진을 고르고, 확대되지 않도록 <strong>핀치로 축소</strong>해 원본 크기를 맞추면 글자가 가장 선명합니다.
+    </div>`;
+}
+function bindWallpaper() {
+  const v = $("studyView");
+  if (!$("wpSize")) return;
+  $("wpSize").onchange = (e) => { wp.size = e.target.value; generateWallpaper(); };
+  v.querySelectorAll("[data-wp]").forEach((b) => b.onclick = () => {
+    wp[b.dataset.wp] = b.dataset.wv;
+    v.querySelectorAll(`[data-wp="${b.dataset.wp}"]`).forEach((x) => x.classList.toggle("on", x === b));
+    generateWallpaper();
+  });
+  $("wpSave").onclick = saveWallpaper;
+}
+function wpDims() {
+  if (wp.size !== "auto") return wp.size.split("x").map(Number);
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  let w = Math.round((screen.width || 390) * dpr), h = Math.round((screen.height || 844) * dpr);
+  if (w > h) [w, h] = [h, w];
+  return [w, h];
+}
+function wpRoundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function wpRgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
+function wpDarken(hex, amt) { const n = parseInt(hex.slice(1), 16), f = (v) => Math.round(v * (1 - amt)); return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`; }
+function wpWrap(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return [text];
+  for (let cut = text.length - 1; cut > 0; cut--) if (ctx.measureText(text.slice(0, cut)).width <= maxW) return [text.slice(0, cut), text.slice(cut)];
+  return [text];
+}
+function generateWallpaper() {
+  const img = $("wpPreview");
+  if (!img || !me) return;
+  const [W, H] = wpDims(), S = Math.min(W, H), dark = wp.theme === "dark";
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  const FONT = "'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif";
+  const txt = dark ? "#e8e8f0" : "#1a1a26", dim = dark ? "#8888aa" : "#6b6b85";
+  if (dark) {
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, "#0a0a0f"); g.addColorStop(0.5, "#12121c"); g.addColorStop(1, "#0d0d14");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const r1 = ctx.createRadialGradient(W * 0.25, H * 0.15, 0, W * 0.25, H * 0.15, W * 0.9);
+    r1.addColorStop(0, "rgba(124,111,224,0.20)"); r1.addColorStop(1, "rgba(124,111,224,0)");
+    ctx.fillStyle = r1; ctx.fillRect(0, 0, W, H);
+    const r2 = ctx.createRadialGradient(W * 0.85, H * 0.85, 0, W * 0.85, H * 0.85, W);
+    r2.addColorStop(0, "rgba(224,111,158,0.15)"); r2.addColorStop(1, "rgba(224,111,158,0)");
+    ctx.fillStyle = r2; ctx.fillRect(0, 0, W, H);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, "#f7f7fb"); g.addColorStop(1, "#eceaf5");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  const padX = W * 0.045, wide = W / H > 1.05;
+  const topPad = wp.layout === "lock" ? H * (wide ? 0.17 : 0.215) : H * 0.085;
+  const botPad = wp.layout === "lock" ? H * (wide ? 0.09 : 0.115) : H * 0.055;
+  const titleSize = S * 0.058;
+  const gridTop = topPad + titleSize + S * 0.10, gridBottom = H - botPad;
+  const gridW = Math.min(W - padX * 2, S * 0.95), gridX = (W - gridW) / 2;
+  const periodW = gridW * 0.072, cellW = (gridW - periodW) / 5;
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  ctx.font = `900 ${titleSize}px ${FONT}`; ctx.fillStyle = txt;
+  ctx.fillText(me.name || "", gridX, topPad + titleSize);
+  ctx.font = `400 ${S * 0.028}px ${FONT}`; ctx.fillStyle = dim;
+  ctx.fillText(`대전과학고 1학년 ${semesterLabel()} · 학번 ${me.student_id ?? ""}`, gridX, topPad + titleSize + S * 0.045);
+  const used = Object.keys(TIMETABLE_43).map((k) => +k.split("-")[1]);
+  const maxPeriod = Math.max(7, ...used);
+  const headH = (gridBottom - gridTop) * 0.062, rowH = (gridBottom - gridTop - headH) / maxPeriod;
+  ctx.textAlign = "center";
+  ctx.font = `700 ${Math.min(rowH * 0.42, cellW * 0.28)}px ${FONT}`;
+  TT_DAYS.forEach((d, i) => {
+    ctx.fillStyle = dark ? WP_DAY_COLORS[i] : wpDarken(WP_DAY_COLORS[i], 0.35);
+    ctx.fillText(d, gridX + periodW + cellW * (i + 0.5), gridTop + headH * 0.75);
+  });
+  const gap = Math.max(2, S * 0.005), radius = S * 0.016;
+  for (let p = 1; p <= maxPeriod; p++) {
+    const y = gridTop + headH + rowH * (p - 1);
+    ctx.textAlign = "center";
+    ctx.font = `500 ${Math.min(rowH * 0.3, S * 0.026)}px ${FONT}`;
+    ctx.fillStyle = dark ? "rgba(136,136,170,0.65)" : "rgba(107,107,133,0.8)";
+    ctx.fillText(String(p), gridX + periodW * 0.5, y + rowH * 0.58);
+    TT_DAYS.forEach((day, i) => {
+      const subj = TIMETABLE_43[`${day}-${p}`];
+      const x = gridX + periodW + cellW * i;
+      const bx = x + gap, by = y + gap, bw = cellW - gap * 2, bh = rowH - gap * 2;
+      if (!subj) {
+        ctx.fillStyle = dark ? "rgba(255,255,255,0.022)" : "rgba(0,0,0,0.03)";
+        wpRoundRect(ctx, bx, by, bw, bh, radius); ctx.fill();
+        return;
+      }
+      const base = subjColor(subj);
+      ctx.fillStyle = wpRgba(base, dark ? 0.22 : 0.16);
+      wpRoundRect(ctx, bx, by, bw, bh, radius); ctx.fill();
+      ctx.strokeStyle = dark ? wpRgba(base, 0.42) : wpRgba(base, 0.75);
+      ctx.lineWidth = Math.max(1, S * 0.0015);
+      wpRoundRect(ctx, bx, by, bw, bh, radius); ctx.stroke();
+      const nameSize = Math.min(rowH * 0.32, cellW * 0.185);
+      ctx.fillStyle = dark ? base : wpDarken(base, 0.45);
+      ctx.font = `700 ${nameSize}px ${FONT}`;
+      const lines = wpWrap(ctx, subj, bw - S * 0.012);
+      let ty = y + rowH / 2 - (lines.length * nameSize * 1.12) / 2 + nameSize * 0.95;
+      lines.forEach((l) => { ctx.fillText(l, x + cellW / 2, ty); ty += nameSize * 1.12; });
+    });
+  }
+  wp.canvas = canvas;
+  img.src = canvas.toDataURL("image/png");
+  if ($("wpSizeNote")) $("wpSizeNote").textContent = `${W} × ${H} px`;
+}
+function saveWallpaper() {
+  if (!wp.canvas) generateWallpaper();
+  if (!wp.canvas) return;
+  const fname = `시간표_${me?.name || "43기"}_1학년${semesterLabel()}.png`;
+  const done = (url) => {
+    const a = document.createElement("a");
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => { if (url.startsWith("blob:")) URL.revokeObjectURL(url); }, 4000);
+  };
+  if (wp.canvas.toBlob) wp.canvas.toBlob((b) => done(b ? URL.createObjectURL(b) : wp.canvas.toDataURL("image/png")), "image/png");
+  else done(wp.canvas.toDataURL("image/png"));
 }
 
 // 내 일정: 수행평가(공지 + 내가 올린 것)와 개인 일정을 한 달력에 모두 보여줍니다. 로그인하면 이 탭으로 시작합니다.
@@ -1336,7 +1579,7 @@ function renderStudy() {
     notice: ["수행평가", `43기 수행평가 ${subjects}`],
     todo: ["할 일", "체크하면서 하나씩 끝내요"],
   }[page];
-  // 내 일정 탭 맨 위에 내 위치 줄(42기는 내 시간표 위에 있던 것)과 알림 받기 카드를 둡니다
+  // 내 위치 줄과 알림 받기 카드는 시간표 탭(renderTimetable)에 있습니다
   $("studyView").innerHTML = `
     <div class="study-head">
       <div>
@@ -1344,7 +1587,6 @@ function renderStudy() {
         <div class="study-sub">${sub}</div>
       </div>
     </div>
-    ${page === "cal" && me.student_id ? '<div class="my-status" id="myStatus"></div>' : ""}
     ${page === "cal" ? `<div class="study-row">
       <button class="study-btn primary" id="btnEv">+ 일정 추가</button>
     </div>
@@ -1356,7 +1598,6 @@ function renderStudy() {
   if ($("btnEv")) $("btnEv").onclick = () => openEventForm(null);
   paintDshs();
   if ($("btnNew")) $("btnNew").onclick = () => openNewForm();   // 클릭 이벤트가 "고칠 공지" 로 넘어가지 않게
-  if ($("myStatus")) { paintMyStatus(); maybePushCard(); }
 }
 
 // quiet: 탭을 눌러 화면을 이미 그린 경우. 30초 안에 받았으면 다시 받지 않고, 받은 내용이 같으면 다시 그리지 않습니다.
