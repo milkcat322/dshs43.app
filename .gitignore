@@ -1,0 +1,9 @@
+# 에디터 · OS
+.vscode/
+.DS_Store
+Thumbs.db
+node_modules/
+
+# Claude Code 개인 설정 (팀 공용 아님)
+.claude/settings.local.json
+CLAUDE.local.md

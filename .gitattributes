@@ -1,0 +1,4 @@
+# 저장소에는 줄바꿈을 LF 로 저장한다 (Windows·Mac 이 섞여도 파일 전체가 바뀐 것처럼 보이지 않게)
+* text=auto
+*.png binary
+*.jpg binary
