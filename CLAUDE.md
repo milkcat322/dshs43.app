@@ -4,6 +4,8 @@
 
 ## 규칙
 
+- **저장소가 둘이다: beta = `origin`(milkcat322/dshs43-beta, 평소 개발 · push), 메인 = `prod`(milkcat322/dshs43.app → `dshs43.app`).** 개발은 beta 에 올려 `dshs43-beta.netlify.app` 에서 확인한다. 메인에는 사용자가 "메인 웹에 올려줘" 라고 할 때만 beta 의 `origin/main` 을 그대로 올린다: `git fetch origin prod` → `git log --oneline prod/main..origin/main` 으로 올라갈 커밋을 보여 주고 → `git push prod origin/main:main`. 메인 저장소를 직접 고치지 않는다. beta 도 실제 서비스 DB 를 쓴다.
+
 - **실제 서비스 DB 를 42기와 함께 쓴다.** 로컬에서 실행해도 실제 DB 에 연결된다. 테스트 데이터를 만들면 반드시 지운다. 42기 학생 데이터에 영향을 주지 않게 조심한다.
 - DB(SQL) · RLS · Edge Function 은 이 저장소에 없다. 바꿔야 하면 `milkcat322/dshs-study` 에서 한다 (`cohort43.sql`, `supabase/functions/dshs-oauth` 의 `RETURN_OK` 등). 기수 구분 · 접근 범위는 화면이 아니라 DB 권한(RLS)으로 막는다.
 - 프론트 파일(`.js`, `index.html` 등)을 고치면 `sw.js` 의 `CACHE` 버전(`dshs43-v…`)을 **반드시** 올린다. 서비스 워커가 캐시 우선이라 안 올리면 학생 기기에 새 코드가 가지 않는다. `CACHE` 이름은 42기(`dshs-study-v…`)와 겹치지 않게 `dshs43-` 으로 시작한다.
