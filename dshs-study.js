@@ -1248,7 +1248,9 @@ const TT_TEACHERS = {
 };
 const TT_DAYS = ["월", "화", "수", "목", "금"];
 const TT_PERIODS = 9;   // 정규 수업 1~9교시 (야간 자습 10~12교시는 빼고)
-const myBan = () => (me?.student_id ? Math.floor(me.student_id / 100) % 10 : 0);
+// 테스트 계정(학번 1999, 명단에 없는 가짜 학번)은 유준우(1409)와 같은 4반 시간표를 봅니다
+const BAN_OVERRIDE = { 1999: 4 };
+const myBan = () => (me?.student_id ? BAN_OVERRIDE[me.student_id] ?? Math.floor(me.student_id / 100) % 10 : 0);
 // 내 반 시간표: { "월-1": "국어", … }
 function myTimetable() {
   return classTimetable(myBan());
@@ -1260,7 +1262,7 @@ function classTimetable(ban) {
   if (t) for (const d of TT_DAYS) (t[d] || "").split(",").forEach((c, i) => { if (c.trim()) out[`${d}-${i + 1}`] = c.trim(); });
   return out;
 }
-const banOf = (sid) => Math.floor(sid / 100) % 10;
+const banOf = (sid) => BAN_OVERRIDE[sid] ?? Math.floor(sid / 100) % 10;
 // 1학년은 모든 과목이 필수(보통기본필수)입니다.
 const SUBJ_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#60a5fa", "#fb923c", "#facc15", "#6ee7b7", "#c4b5fd", "#fca5a5", "#a5b4fc", "#5eead4", "#fbbf24"];
 // 과목 → 색. 수업 외 활동(자율 · 동아리 · R&E)은 회색
