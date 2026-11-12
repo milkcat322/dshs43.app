@@ -1167,10 +1167,44 @@ function openAdminLogin() {
 
 function showErr(msg) { const e = $("authErr"); e.textContent = msg; e.classList.add("show"); }
 
-// ---------- 탭: 내 일정 · 수행평가 공지 · 할 일 · 급식 ----------
-// (42기 사이트의 '시간표' · '공부' 탭은 43기에 아직 없습니다)
-const PAGES = [["cal", "내 일정"], ["notice", "수행평가"], ["todo", "할 일"], ["meal", "급식"]];
-const PAGE_VIEW = { cal: "feed", notice: "notice", todo: "todo", meal: "meal" };
+// ---------- 탭: 시간표 · 내 일정 · 수행평가 공지 · 할 일 · 급식 ----------
+// (42기 사이트의 '공부' 탭은 43기에 없습니다)
+const PAGES = [["tt", "시간표"], ["cal", "내 일정"], ["notice", "수행평가"], ["todo", "할 일"], ["meal", "급식"]];
+const PAGE_VIEW = { tt: "tt", cal: "feed", notice: "notice", todo: "todo", meal: "meal" };
+
+// ---------- 시간표 ----------
+// 43기 시간표는 아직 없어 빈 칸으로 보여 줍니다. 나오면 TIMETABLE_43 에 "요일-교시": "과목" 으로 채웁니다
+// (예: "월-1": "국어II"). 분반이 생기면 cohort43.sql 의 수강(enrollments) 분반도 함께 맞춥니다.
+const TIMETABLE_43 = {};
+const TT_DAYS = ["월", "화", "수", "목", "금"];
+const TT_PERIODS = 9;   // 정규 수업 1~9교시 (야간 자습 10~12교시는 빼고)
+function renderTimetable() {
+  const empty = !Object.keys(TIMETABLE_43).length;
+  const today = TT_DAYS[new Date().getDay() - 1];
+  const rows = Array.from({ length: TT_PERIODS }, (_, i) => {
+    const p = i + 1, [s, e] = PERIOD_TIME[p];
+    return `<tr><th class="tt-p"><b>${p}</b><small>${s}<br>${e}</small></th>${TT_DAYS.map((d) => {
+      const subj = TIMETABLE_43[`${d}-${p}`];
+      return `<td class="${d === today ? "tt-today" : ""}">${subj ? esc(subj) : ""}</td>`;
+    }).join("")}</tr>`;
+  }).join("");
+  $("studyView").innerHTML = `
+    <div class="study-head">
+      <div>
+        <h2>시간표</h2>
+        <div class="study-sub">${empty ? "43기 시간표가 나오면 여기에 채워져요" : "43기 시간표"}</div>
+      </div>
+    </div>
+    <div class="tt-wrap">
+      <table class="tt-grid">
+        <thead><tr><th></th>${TT_DAYS.map((d) => `<th class="${d === today ? "tt-today" : ""}">${d}</th>`).join("")}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${empty ? `<div class="tt-empty">아직 시간표가 없어요</div>` : ""}
+    </div>
+    <div class="study-section">듣는 과목 ${SUBJECTS_43.length}개 · ${TOTAL_CREDITS}학점</div>
+    <div class="tt-subjects">${SUBJECTS_43.map(([subject, credits]) => `<span class="tt-subj">${esc(subject)}<small>${credits}학점</small></span>`).join("")}</div>`;
+}
 
 // 내 일정: 수행평가(공지 + 내가 올린 것)와 개인 일정을 한 달력에 모두 보여줍니다. 로그인하면 이 탭으로 시작합니다.
 function openStudy(p) {
@@ -1182,6 +1216,7 @@ function openStudy(p) {
   $("studyView").style.display = "block";
   document.body.classList.add("study-open");
   if (page === "meal") { mealDay = null; renderMeal(); renderNav(); return; }   // 급식은 NEIS 에서 바로 받습니다 (열 때마다 다음 끼니 날로)
+  if (page === "tt") { renderTimetable(); renderNav(); return; }   // 시간표는 서버 자료를 쓰지 않습니다
   renderStudy();
   renderNav();
   // 받아 둔 내용(지난 화면 · 앞서 받은 것)이 있으면 '불러오는 중' 없이 바로 그리고, 서버에서 새로 받아 바뀐 것만 다시 그립니다
@@ -1196,7 +1231,7 @@ function closeStudy() {
 }
 // 지금 view 에 맞춰 studyBody 를 다시 그립니다
 function rerender() {
-  if (view === "meal") return;   // 급식 탭은 서버 자료를 쓰지 않습니다
+  if (view === "meal" || view === "tt") return;   // 급식 · 시간표 탭은 서버 자료를 쓰지 않습니다
   if (view === "notice") renderNotice();
   else if (view === "todo") renderTodo();
   else renderList(view);
@@ -2357,7 +2392,6 @@ async function removeItem(id) {
 // ---------- 시간표 (아직 없음) ----------
 // 43기 시간표가 나오면 42기 사이트(dshs-study.js 의 myBlocks · ttEvents)처럼 내 일정 달력에 수업을 깔 수 있습니다.
 // 교시 시각은 이 한 곳에서만 관리합니다: 1교시 08:20 시작, 50분 수업 + 10분 쉬는 시간, 점심 12:10–13:10
-// eslint-disable-next-line no-unused-vars
 const PERIOD_TIME = {
   1: ["08:20", "09:10"], 2: ["09:20", "10:10"], 3: ["10:20", "11:10"], 4: ["11:20", "12:10"],
   5: ["13:10", "14:00"], 6: ["14:10", "15:00"], 7: ["15:20", "16:10"], 8: ["16:20", "17:10"], 9: ["17:20", "18:10"],
