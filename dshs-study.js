@@ -13,9 +13,10 @@ const inCohort = (sid) => sid >= COHORT_SID[0] && sid <= COHORT_SID[1];
 const COHORT_OTHER_URL = "https://dshs42.app";
 
 // 43기 과목 (모두 함께 들으므로 분반 없음 → ban: null = "전체 분반"). 이수학점은 프로필 등에 쓸 수 있게 둡니다.
+// 과목 이름은 DB(cohort43_subjects · 수강 · 수행평가)와 같아야 합니다. 학생들이 부르는 이름으로 통일했습니다.
 const SUBJECTS_43 = [
-  ["국어II", 3], ["영어II", 3], ["지구과학II", 3], ["진로와직업", 1], ["체육II", 1], ["화학II", 3],
-  ["적분과통계", 3], ["기하와벡터", 3], ["물리학II", 3], ["한국사II", 2], ["컴퓨팅사고력과 문제해결", 3], ["생명과학II", 3],
+  ["국어", 3], ["영어회화", 3], ["지구과학", 3], ["진로", 1], ["체육", 1], ["화학", 3],
+  ["적분과 통계", 3], ["기하와 벡터", 3], ["물리", 3], ["한국사", 2], ["프로그래밍", 3], ["생명과학", 3],
 ];
 const SUBJECT_CREDITS = Object.fromEntries(SUBJECTS_43);
 const TOTAL_CREDITS = SUBJECTS_43.reduce((a, [, c]) => a + c, 0);   // 31
@@ -493,7 +494,7 @@ function sortClasses(list) {
 const banLabel = (ban) => ban || "전체 분반";
 const mySubjects = () => [...new Set(myClasses.map((c) => c.subject))];
 // 수행평가를 보지 않는 과목은 수행평가 탭과 추가 화면에서 뺍니다.
-const NO_ASG_SUBJECTS = new Set(["체육II"]);
+const NO_ASG_SUBJECTS = new Set(["체육"]);
 const asgClasses = () => myClasses.filter((c) => !NO_ASG_SUBJECTS.has(c.subject));
 const asgSubjects = () => mySubjects().filter((s) => !NO_ASG_SUBJECTS.has(s));
 
@@ -1173,26 +1174,66 @@ const PAGES = [["tt", "시간표"], ["cal", "내 일정"], ["notice", "수행평
 const PAGE_VIEW = { tt: "tt", cal: "feed", notice: "notice", todo: "todo", meal: "meal" };
 
 // ---------- 시간표 ----------
-// 43기 시간표는 아직 없어 빈 칸으로 보여 줍니다. 나오면 TIMETABLE_43 에 "요일-교시": "과목" 으로 채웁니다
-// (예: "월-1": "국어II"). 분반이 생기면 cohort43.sql 의 수강(enrollments) 분반도 함께 맞춥니다.
-const TIMETABLE_43 = {};
+// 반별 시간표 (2학기). 반은 학번 둘째 자리(1203 → 2반). 요일마다 1교시부터 칸을 쉼표로, 빈 칸은 비워 둡니다.
+// 칸 이름은 과목 이름(SUBJECTS_43) 그대로, 그 밖은 수업 외 활동(자율 · 동아리 · R&E).
+// 선생님은 반마다 같아서 과목별로 TT_TEACHERS 에 모두 적고 칸마다 다 보여 줍니다
+// (화학 · 기하와 벡터 · 적분과 통계 · 물리는 격주로 한 교시 · 두 교시 수업 선생님이 바뀌어 두 분 모두 표시).
+// 화요일 8 · 9교시 동아리, 목요일 5~7교시 R&E, 월요일 7교시 자율(학급자치)은 모든 반이 같습니다. 6반은 아직 없습니다.
+const TT_CLUB = ",동아리,동아리";
+const TIMETABLE_43 = {
+  1: { 월: "생명과학,생명과학,적분과 통계,체육,물리,물리,자율", 화: "프로그래밍,물리,화학,화학,지구과학,한국사,국어" + TT_CLUB,
+       수: "진로,기하와 벡터,적분과 통계,적분과 통계,지구과학,국어,영어회화", 목: "국어,영어회화,프로그래밍,한국사,R&E,R&E,R&E",
+       금: "프로그래밍,영어회화,지구과학,생명과학,기하와 벡터,기하와 벡터,화학" },
+  2: { 월: "국어,진로,지구과학,적분과 통계,기하와 벡터,기하와 벡터,자율", 화: "생명과학,생명과학,물리,기하와 벡터,국어,지구과학,체육" + TT_CLUB,
+       수: "지구과학,화학,프로그래밍,한국사,영어회화,물리,물리", 목: "프로그래밍,적분과 통계,적분과 통계,국어,R&E,R&E,R&E",
+       금: "영어회화,생명과학,화학,화학,한국사,영어회화,프로그래밍" },
+  3: { 월: "한국사,프로그래밍,국어,지구과학,화학,화학,자율", 화: "영어회화,기하와 벡터,한국사,지구과학,국어,적분과 통계,적분과 통계" + TT_CLUB,
+       수: "적분과 통계,영어회화,화학,물리,체육,기하와 벡터,기하와 벡터", 목: "프로그래밍,국어,생명과학,진로,R&E,R&E,R&E",
+       금: "물리,물리,영어회화,프로그래밍,지구과학,생명과학,생명과학" },
+  4: { 월: "물리,물리,프로그래밍,국어,적분과 통계,적분과 통계,자율", 화: "화학,화학,국어,지구과학,프로그래밍,기하와 벡터,진로" + TT_CLUB,
+       수: "영어회화,생명과학,기하와 벡터,기하와 벡터,지구과학,화학,한국사", 목: "적분과 통계,생명과학,생명과학,영어회화,R&E,R&E,R&E",
+       금: "한국사,프로그래밍,체육,물리,지구과학,영어회화,국어" },
+  5: { 월: "진로,한국사,기하와 벡터,기하와 벡터,생명과학,생명과학,자율", 화: "국어,영어회화,국어,프로그래밍,물리,물리,기하와 벡터" + TT_CLUB,
+       수: "국어,물리,영어회화,지구과학,적분과 통계,체육,생명과학", 목: "지구과학,화학,화학,프로그래밍,R&E,R&E,R&E",
+       금: "프로그래밍,한국사,적분과 통계,적분과 통계,영어회화,화학,지구과학" },
+};
+const TT_TEACHERS = {
+  국어: "김도현 · 정선혜", 영어회화: "한신실 · Nthabiseng", 지구과학: "최원문 · 김진욱 · 김우겸", 화학: "이충섭 · 김정은",
+  생명과학: "이민주 · 손희창 · 임재화", 물리: "신대호 · 이주희", "적분과 통계": "조영민 · 전혜진", "기하와 벡터": "김수정 · 남정훈",
+  한국사: "이병수", 프로그래밍: "안소희 · 신요셉 · 백경덕", 진로: "최형미", 체육: "최정호",
+};
 const TT_DAYS = ["월", "화", "수", "목", "금"];
 const TT_PERIODS = 9;   // 정규 수업 1~9교시 (야간 자습 10~12교시는 빼고)
+const myBan = () => (me?.student_id ? Math.floor(me.student_id / 100) % 10 : 0);
+// 내 반 시간표: { "월-1": "국어", … }
+function myTimetable() {
+  const t = TIMETABLE_43[myBan()];
+  const out = {};
+  if (t) for (const d of TT_DAYS) (t[d] || "").split(",").forEach((c, i) => { if (c.trim()) out[`${d}-${i + 1}`] = c.trim(); });
+  return out;
+}
 // 1학년은 모든 과목이 필수(보통기본필수)입니다.
 const SUBJ_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#60a5fa", "#fb923c", "#facc15", "#6ee7b7", "#c4b5fd", "#fca5a5", "#a5b4fc", "#5eead4", "#fbbf24"];
-const subjColor = (subject) => SUBJ_COLORS[Math.max(0, SUBJECTS_43.findIndex(([s]) => s === subject)) % SUBJ_COLORS.length];
+// 과목 → 색. 수업 외 활동(자율 · 동아리 · R&E)은 회색
+const isSubject43 = (name) => SUBJECTS_43.some(([s]) => s === name);
+const subjColor = (name) => {
+  const i = SUBJECTS_43.findIndex(([s]) => s === name);
+  return i < 0 ? "#8888aa" : SUBJ_COLORS[i % SUBJ_COLORS.length];
+};
 const semesterLabel = () => { const m = new Date().getMonth() + 1; return m >= 3 && m < 8 ? "1학기" : "2학기"; };
 let ttTab = "tt";   // 시간표 탭 안의 칸: tt 시간표 · gpa 학점 계산 · wp 배경화면
 
 function ttGridHtml() {
-  const empty = !Object.keys(TIMETABLE_43).length;
+  const tt = myTimetable();
+  const empty = !Object.keys(tt).length;
   const today = TT_DAYS[new Date().getDay() - 1];
-  const rows = Array.from({ length: TT_PERIODS }, (_, i) => {
+  const last = Math.max(7, ...Object.keys(tt).map((k) => +k.split("-")[1]));
+  const rows = Array.from({ length: Math.min(last, TT_PERIODS) }, (_, i) => {
     const p = i + 1, [s, e] = PERIOD_TIME[p];
     return `<tr><th class="tt-p"><b>${p}</b><small>${s}<br>${e}</small></th>${TT_DAYS.map((d) => {
-      const subj = TIMETABLE_43[`${d}-${p}`];
-      const c = subj ? subjColor(subj) : "";
-      return `<td class="${d === today ? "tt-today" : ""}">${subj ? `<span class="tt-cell" style="background:${c}22;border-color:${c}66;color:${c}">${esc(subj)}</span>` : ""}</td>`;
+      const code = tt[`${d}-${p}`];
+      const c = code ? subjColor(code) : "";
+      return `<td class="${d === today ? "tt-today" : ""}">${code ? `<span class="tt-cell" style="background:${c}22;border-color:${c}66;color:${c}">${esc(code)}${TT_TEACHERS[code] ? `<small>${esc(TT_TEACHERS[code])}</small>` : ""}</span>` : ""}</td>`;
     }).join("")}</tr>`;
   }).join("");
   return `<div class="tt-wrap">
@@ -1200,18 +1241,18 @@ function ttGridHtml() {
         <thead><tr><th></th>${TT_DAYS.map((d) => `<th class="${d === today ? "tt-today" : ""}">${d}</th>`).join("")}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      ${empty ? `<div class="tt-empty">43기 시간표가 나오면 채워져요</div>` : ""}
+      ${empty ? `<div class="tt-empty">${myBan() ? `${myBan()}반 시간표는 아직 없어요` : "시간표가 아직 없어요"}</div>` : ""}
     </div>`;
 }
 
 function renderTimetable() {
   const sid = me?.student_id;
   const name = me?.name || "";
-  const weekly = Object.keys(TIMETABLE_43).length;
+  const weekly = Object.values(myTimetable()).filter(isSubject43).length;   // 수업 외 활동은 빼고
   $("studyView").innerHTML = `
     <div class="student-profile">
       <div class="student-avatar">${esc(name[0] || "?")}</div>
-      <div class="student-info"><h2>${esc(name)}</h2><div class="student-meta">학번 ${esc(sid ?? "")} · 1학년 ${semesterLabel()}</div></div>
+      <div class="student-info"><h2>${esc(name)}</h2><div class="student-meta">학번 ${esc(sid ?? "")} · 1학년 ${myBan() ? `${myBan()}반 · ` : ""}${semesterLabel()}</div></div>
     </div>
     ${sid ? '<div class="my-status" id="myStatus"></div>' : ""}
     <div class="stats-row">
@@ -1253,7 +1294,7 @@ function gpaLoad() {
 }
 function gpaSave(st) { try { localStorage.setItem(gpaKey(), JSON.stringify(st)); } catch {} }
 // P/F 과목: 전원 Pass 라 A+(4.3)로 넣어 계산하고, 학점 계산 칸에는 보이지 않습니다
-const PF_43 = new Set(["진로와직업", "영어II"]);
+const PF_43 = new Set(["진로", "영어회화"]);
 function renderGpa() {
   const box = $("panel-gpa");
   if (!box) return;
@@ -1387,8 +1428,9 @@ function generateWallpaper() {
   ctx.font = `900 ${titleSize}px ${FONT}`; ctx.fillStyle = txt;
   ctx.fillText(me.name || "", gridX, topPad + titleSize);
   ctx.font = `400 ${S * 0.028}px ${FONT}`; ctx.fillStyle = dim;
-  ctx.fillText(`대전과학고 1학년 ${semesterLabel()} · 학번 ${me.student_id ?? ""}`, gridX, topPad + titleSize + S * 0.045);
-  const used = Object.keys(TIMETABLE_43).map((k) => +k.split("-")[1]);
+  ctx.fillText(`대전과학고 1학년 ${myBan() ? `${myBan()}반 ` : ""}${semesterLabel()} · 학번 ${me.student_id ?? ""}`, gridX, topPad + titleSize + S * 0.045);
+  const tt = myTimetable();
+  const used = Object.keys(tt).map((k) => +k.split("-")[1]);
   const maxPeriod = Math.max(7, ...used);
   const headH = (gridBottom - gridTop) * 0.062, rowH = (gridBottom - gridTop - headH) / maxPeriod;
   ctx.textAlign = "center";
@@ -1405,7 +1447,7 @@ function generateWallpaper() {
     ctx.fillStyle = dark ? "rgba(136,136,170,0.65)" : "rgba(107,107,133,0.8)";
     ctx.fillText(String(p), gridX + periodW * 0.5, y + rowH * 0.58);
     TT_DAYS.forEach((day, i) => {
-      const subj = TIMETABLE_43[`${day}-${p}`];
+      const subj = tt[`${day}-${p}`];
       const x = gridX + periodW + cellW * i;
       const bx = x + gap, by = y + gap, bw = cellW - gap * 2, bh = rowH - gap * 2;
       if (!subj) {
