@@ -2055,6 +2055,7 @@ const findAsg = (id) => cache.items.find((a) => a.id === id) || cache.mine.find(
 function openItem(kind, id) {
   if (kind === "asg") openAsgDetail(findAsg(id));
   else if (kind === "sch") openSchoolDetail(cache.school.find((x) => x.id === id));
+  else if (kind === "tt") return;
   else if (kind === "acad") openAcadDetail(acadList.find((e) => e.id === id));
   else if (kind === "dshs") openDshsDetail(dshs.items.find((r) => r.uid === id));
   else if (kind === "todo") openTodoForm(cache.todos.find((t) => t.id === id));
@@ -2136,7 +2137,7 @@ async function mountCal() {
       : { html: `<span class="fcx-wd">${arg.date.toLocaleDateString("ko-KR", { weekday: "short" })}</span><span class="fcx-daynum">${arg.date.getDate()}</span>` },
     // 월 보기 칸의 "29일" → "29". 주·3일 보기의 종일 칸에는 날짜를 다시 쓰지 않습니다
     dayCellContent: (arg) => arg.view.type === "dayGridMonth" ? String(arg.date.getDate()) : "",
-    events: (info, ok) => ok([...acadEvents(info.start, info.end), ...fcEvents()]),
+    events: (info, ok) => ok([...ttEvents(info.start, info.end), ...acadEvents(info.start, info.end), ...fcEvents()]),
     eventContent: fcContent,
     datesSet: (arg) => { fcDate = arg.view.currentStart; const t = $("calTitle"); if (t) t.textContent = arg.view.title; },
     dateClick: (arg) => {
@@ -2192,6 +2193,7 @@ function fcContent(arg) {
   const p = arg.event.extendedProps;
   const compact = compactCal(arg);
   const full = arg.event.title, title = full;
+  if (p.kind === "tt") return { html: `<div class="fcx-tt-in"><b>${esc(title)}</b>${compact ? "" : `<span>${esc(p.label)}</span>`}</div>` };
   if (p.kind === "todo") return { html: `<div class="fcx" title="${esc(full)}"><div class="fcx-title"><span class="fcx-tchk" role="checkbox" aria-checked="${p.done}" aria-label="완료 표시">${p.done ? "✓" : ""}</span>${esc(title)}</div></div>` };
   const s = arg.event.start, e = arg.event.end;
   const time = compact ? ""
@@ -2953,14 +2955,87 @@ async function removeItem(id) {
   return true;
 }
 
-// ---------- 시간표 (아직 없음) ----------
-// 43기 시간표가 나오면 42기 사이트(dshs-study.js 의 myBlocks · ttEvents)처럼 내 일정 달력에 수업을 깔 수 있습니다.
+// ---------- 내 일정 달력의 시간표 ----------
+// 42기 사이트(myBlocks · ttEvents)처럼 3일 · 주 보기에 내 반 시간표(TIMETABLE_43)를 흐린 배경으로 깝니다.
 // 교시 시각은 이 한 곳에서만 관리합니다: 1교시 08:20 시작, 50분 수업 + 10분 쉬는 시간, 점심 12:10–13:10
 const PERIOD_TIME = {
   1: ["08:20", "09:10"], 2: ["09:20", "10:10"], 3: ["10:20", "11:10"], 4: ["11:20", "12:10"],
   5: ["13:10", "14:00"], 6: ["14:10", "15:00"], 7: ["15:20", "16:10"], 8: ["16:20", "17:10"], 9: ["17:20", "18:10"],
   10: ["19:00", "19:50"], 11: ["20:00", "20:50"], 12: ["21:00", "21:50"],
 };
+const DOW = { 월: 1, 화: 2, 수: 3, 목: 4, 금: 5 };
+let showTT = (() => { try { return localStorage.getItem("dshs-cal-tt") !== "off"; } catch { return true; } })();
+
+// 내 반 시간표 → 요일별 수업 블록. 같은 과목이 이어지는 교시는 한 블록으로 합칩니다 (예: 3·4교시).
+let ttMemo = null;
+function myBlocks() {
+  const ban = myBan();
+  if (ttMemo?.ban === ban) return ttMemo.blocks;
+  const tt = myTimetable(), blocks = {};
+  for (const [day, dow] of Object.entries(DOW)) {
+    blocks[dow] = [];
+    for (let p = 1; p <= TT_PERIODS; p++) {
+      const s = tt[`${day}-${p}`];
+      if (!s) continue;
+      const last = blocks[dow][blocks[dow].length - 1];
+      if (last && last.subject === s && last.to === p - 1) last.to = p;
+      else blocks[dow].push({ subject: s, from: p, to: p });
+    }
+  }
+  ttMemo = { ban, blocks };
+  return blocks;
+}
+
+// 학교 일정 중 "수업 없음" 으로 표시된 날짜들 + 학사일정의 공휴일·휴업일(방학 포함)·지필평가
+// 학사일정은 달력에서 꺼 두어도 그날 시간표는 깔지 않습니다.
+function noClassDays() {
+  const days = new Set();
+  for (const e of liveSchool().filter((x) => x.no_class)) {
+    const d = new Date(e.starts_at); d.setHours(0, 0, 0, 0);
+    const last = new Date(e.ends_at || e.starts_at);
+    for (; d <= last; d.setDate(d.getDate() + 1)) days.add(dayKey(d));
+  }
+  for (const e of myAcad().filter((x) => x.type === "공휴일" || x.type === "휴업일" || x.name.includes("지필평가"))) {
+    for (const d = parseDay(e.start); dayKey(d) <= e.end; d.setDate(d.getDate() + 1)) days.add(dayKey(d));
+  }
+  return days;
+}
+
+// 귀가일 날짜들 (학사일정 + 관리자가 추가한 학교 일정)
+function homeDays() {
+  const days = new Set(myAcad().filter((e) => e.name.includes("귀가")).map((e) => e.start));
+  for (const e of liveSchool()) if (e.title.includes("귀가")) days.add(dayKey(new Date(e.starts_at)));
+  return days;
+}
+
+// 보이는 범위의 평일마다 수업을 흐린 배경 블록으로 깝니다. 월 보기에는 깔지 않습니다.
+// R&E 는 목요일 수업이라, 귀가일이 목요일이면 그날은 깔지 않습니다.
+function ttEvents(from, to) {
+  if (!me?.student_id || !showTT || to - from > 8 * 86400000) return [];
+  const blocks = myBlocks(), off = noClassDays(), homes = homeDays(), out = [];
+  for (const d = new Date(from); d < to; d.setDate(d.getDate() + 1)) {
+    const key = dayKey(d);
+    if (off.has(key)) continue;
+    (blocks[d.getDay()] || []).filter((b) => !(b.subject === "R&E" && homes.has(key))).forEach((b, i) => {
+      out.push(ttBlock(`tt:${key}:${i}`, b, periodTime(key, b.from, 0), periodTime(key, b.to, 1)));
+    });
+  }
+  return out;
+}
+
+function periodTime(key, period, end) {
+  const [h, m] = PERIOD_TIME[period][end].split(":");
+  const d = parseDay(key); d.setHours(+h, +m);
+  return d;
+}
+const periodLabel = (b) => (b.from === b.to ? `${b.from}교시` : `${b.from}–${b.to}교시`);
+
+function ttBlock(id, block, start, end) {
+  return {
+    id, title: block.subject, display: "background", classNames: ["fcx-tt"], start, end,
+    extendedProps: { kind: "tt", label: periodLabel(block) },
+  };
+}
 
 // ---------- 피드백 ----------
 // 로그인한 사용자가 보내고 관리자가 읽습니다. 스크린샷은 비공개 버킷 feedback 에 저장합니다.
@@ -3193,7 +3268,7 @@ function openAcadDetail(e) {
     <div class="study-foot">${e.from ? `${esc(e.from)}로 추가한 일정이에요.` : "학교 홈페이지 학사일정(NEIS)에서 가져온 일정이에요."}</div>`);
 }
 
-// 설정의 달력 항목: 학교 일정(전체 · 종류 6가지). 43기는 아직 시간표가 없어 '학교 시간표 보이기'는 뺐습니다.
+// 설정의 달력 항목: 학교 일정(전체 · 종류 6가지) · 학교 시간표 보이기
 function calSettingsHtml() {
   const g = myGrade();
   return `
@@ -3201,9 +3276,16 @@ function calSettingsHtml() {
       <input type="checkbox" id="setSchool"${showSchool ? " checked" : ""}></label>
     <div class="set-sub" id="acadOpts">${ACAD_CATS.map(([k, label, hint]) =>
       `<label class="set-row"><span><b>${label}</b><span class="ev-hint">${hint}</span></span>
-        <input type="checkbox" data-acad="${k}"${acadOn.has(k) ? " checked" : ""}${showSchool ? "" : " disabled"}></label>`).join("")}</div>`;
+        <input type="checkbox" data-acad="${k}"${acadOn.has(k) ? " checked" : ""}${showSchool ? "" : " disabled"}></label>`).join("")}</div>
+    ${me?.student_id ? `<label class="set-row"><span><b>학교 시간표 보이기</b><span class="ev-hint">내 일정 달력의 3일 · 주 보기에 우리 반 수업을 깔아 줘요</span></span>
+      <input type="checkbox" id="setTT"${showTT ? " checked" : ""}></label>` : ""}`;
 }
 function bindCalSettings() {
+  if ($("setTT")) $("setTT").onchange = () => {
+    showTT = $("setTT").checked;
+    try { localStorage.setItem("dshs-cal-tt", showTT ? "on" : "off"); } catch {}
+    fc?.refetchEvents();
+  };
   $("setSchool").onchange = () => {
     showSchool = $("setSchool").checked;
     try { localStorage.setItem("dshs-cal-school", showSchool ? "on" : "off"); } catch {}
