@@ -15,6 +15,9 @@ permissions:
 
 jobs:
   update:
+    # beta 저장소에서만 돕니다. 메인(dshs43.app)에서도 커밋하면 beta 와 갈라져 "메인에 올리기"가 거절되므로,
+    # 메인에는 beta 를 올릴 때 최신 학사일정이 함께 갑니다.
+    if: github.repository == 'milkcat322/dshs43-beta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
