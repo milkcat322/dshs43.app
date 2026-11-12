@@ -1280,76 +1280,92 @@ let ttTab = "tt";   // 시간표 탭 안의 칸: tt 시간표 · gpa 학점 계�
 
 const lastPeriod = (tt) => Math.max(7, ...Object.keys(tt).map((k) => +k.split("-")[1]));
 
-// ---------- 격주로 선생님이 바뀌는 수업 (ttpicks43.sql) ----------
-// 아래 네 과목은 반마다 '두 교시 연속 수업' 1번과 '한 교시 수업' 1번이 있고, 두 선생님이 격주로 서로 바꿔 맡습니다.
-// 반 친구 한 명이 어느 칸이든 이번 주 선생님을 고르면(set_tt_pick) 그 반의 나머지 칸과 다음 주들이 정해지고
-// 같은 반 친구들 시간표에도 보입니다. 기말고사(2차 지필평가) 주간부터는 고른 값을 쓰지 않습니다.
-const ALT_PAIRS = { "화학": ["이충섭", "김정은"], "기하와 벡터": ["김수정", "남정훈"], "적분과 통계": ["조영민", "전혜진"], "물리": ["신대호", "이주희"] };
-let ttPicks = new Map(), ttPicksAt = 0;   // "반|과목" → { double_teacher, week }
+// ---------- 시간표 칸의 선생님 고르기 (ttpicks43.sql) ----------
+// 선생님이 여러 명인 과목은 반 학생이 그 요일 · 교시 수업의 선생님을 고르고(set_tt_teacher), 같은 반 친구들 시간표에도 보입니다.
+//  - 보통 과목: 한 번 고르면 매주 같음 (on_date = WEEKLY)
+//  - 격주로 선생님이 바뀌는 과목(ALT_SUBJECTS): 기말고사(1학년 지필평가) 전까지 그 요일 · 교시 수업을 날짜마다 고름
+const ALT_SUBJECTS = new Set(["화학", "기하와 벡터", "적분과 통계", "물리"]);
+const WEEKLY = "2000-01-01";
+const teachersOf = (s) => (TT_TEACHERS[s] || "").split(" · ").filter(Boolean);
+let ttPicks = new Map(), ttPicksAt = 0;   // "반|요일|교시|날짜" → 선생님
 async function loadTtPicks(force = false) {
   if (!sb) await sbWait;
   if (!force && Date.now() - ttPicksAt < 30000) return;
-  const { data, error } = await sb.from("cohort43_tt_picks").select("ban, subject, double_teacher, week");
-  if (error) return;   // 표가 아직 없으면(SQL 실행 전) 두 선생님을 모두 보여 줍니다
+  const { data, error } = await sb.from("cohort43_tt_teachers").select("ban, day, period, on_date, teacher");
+  if (error) return;   // 표가 아직 없으면(SQL 실행 전) 선생님을 모두 보여 줍니다
   ttPicksAt = Date.now();
-  ttPicks = new Map(data.map((r) => [`${r.ban}|${r.subject}`, r]));
+  ttPicks = new Map(data.map((r) => [`${r.ban}|${r.day}|${r.period}|${r.on_date}`, r.teacher]));
 }
-const mondayKey = (d = new Date()) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return dayKey(x); };
-const otherOf = (subject, t) => ALT_PAIRS[subject].find((x) => x !== t);
-// 고른 주(week) 뒤로 1 · 2학년 지필평가가 시작했으면 고른 값은 끝난 것으로 봅니다 (학사일정을 못 받았으면 2026-12-14)
-function pickExpired(week) {
+// 다음 1학년 지필평가 시작일 (학사일정을 못 받았으면 2026-12-14). 그 전까지의 날짜만 고릅니다
+function nextExam() {
   const today = dayKey(new Date());
-  const exams = acadList ? acadList.filter((e) => /지필/.test(e.name) && e.grades.includes(1)).map((e) => e.start) : ["2026-12-14"];
-  return exams.some((s) => s > week && s <= today);
+  const exams = (acadList ? acadList.filter((e) => /지필/.test(e.name) && e.grades.includes(1)).map((e) => e.start) : ["2026-12-14"])
+    .filter((s) => s >= today).sort();
+  return exams[0] || null;
 }
-// 그 칸이 두 교시 연속 수업인지
-function isDoubleSlot(ban, d, p) {
-  const tt = classTimetable(ban), s = tt[`${d}-${p}`];
-  return tt[`${d}-${p - 1}`] === s || tt[`${d}-${p + 1}`] === s;
+// 이번 주부터 기말고사 전까지, 그 요일의 날짜들
+function slotDates(d) {
+  const end = nextExam();
+  if (!end) return [];
+  const x = new Date(); x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7) + TT_DAYS.indexOf(d));   // 이번 주 그 요일
+  const out = [];
+  for (; dayKey(x) < end; x.setDate(x.getDate() + 7)) out.push(dayKey(x));
+  return out;
 }
-// 그 칸의 이번 주 선생님. 정해지지 않았으면 null
-function slotPick(ban, d, p) {
-  const s = classTimetable(ban)[`${d}-${p}`], pick = ttPicks.get(`${ban}|${s}`);
-  if (!ALT_PAIRS[s] || !pick || pickExpired(pick.week)) return null;
-  const weeks = Math.round((parseDay(mondayKey()) - parseDay(pick.week)) / (7 * 86400000));
-  const dbl = weeks % 2 === 0 ? pick.double_teacher : otherOf(s, pick.double_teacher);
-  return isDoubleSlot(ban, d, p) ? dbl : otherOf(s, dbl);
+// 그 칸의 선생님 (고른 게 없으면 null). 격주 과목은 그 날짜, 아니면 매주 값
+function slotTeacher(ban, d, p, date) {
+  return ttPicks.get(`${ban}|${d}|${p}|${date || WEEKLY}`) || null;
 }
-// 칸을 누르면: 과목 · 교시 · 선생님. 격주 과목은 내 반이면 이번 주 선생님을 고를 수 있어요
+// 이번 주(그 요일)의 날짜
+const thisWeekDate = (d) => { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7) + TT_DAYS.indexOf(d)); return dayKey(x); };
+// 칸을 누르면: 과목 · 교시 · 선생님. 선생님이 여러 명이면 내 반은 고를 수 있어요 (격주 과목은 날짜마다)
 async function openTtCell(ban, d, p) {
   const s = classTimetable(ban)[`${d}-${p}`];
   if (!s) return;
   const [st, en] = PERIOD_TIME[p];
-  const alt = ALT_PAIRS[s];
+  const list = teachersOf(s), multi = list.length > 1, alt = ALT_SUBJECTS.has(s) && multi;
+  const mine = multi && ban === myBan();
+  const btns = (date, cur) => `<div class="study-row tt-pick">${list.map((t) =>
+    `<button class="study-btn${cur === t ? " primary" : ""}" data-tpick="${esc(t)}" data-tdate="${date}">${esc(t)}</button>`).join("")}</div>`;
   const draw = () => {
-    const cur = alt ? slotPick(ban, d, p) : null;
-    const pick = alt ? ttPicks.get(`${ban}|${s}`) : null;
-    const expired = pick && pickExpired(pick.week);
-    const mine = alt && ban === myBan();
+    const dates = alt ? slotDates(d) : [];
+    const now = alt ? slotTeacher(ban, d, p, thisWeekDate(d)) : slotTeacher(ban, d, p);
+    let pick = "";
+    if (mine && !alt) {
+      pick = `<label class="study-label">이 수업 선생님 고르기 (매주)</label>${btns(WEEKLY, now)}`;
+    } else if (mine && alt) {
+      pick = dates.length
+        ? `<label class="study-label">날짜마다 선생님 고르기 (기말고사 전까지)</label>
+          ${dates.map((k) => `<div class="tt-date-row"><span class="tt-date">${md(parseDay(k))} (${d})</span>${btns(k, slotTeacher(ban, d, p, k))}</div>`).join("")}`
+        : `<div class="study-foot" style="text-align:left">기말고사 전까지 남은 수업이 없어요.</div>`;
+    }
     openSheet(esc(s), `
-      <div class="asg-body">${ban}반 · ${d}요일 ${p}교시 (${st}–${en})${isDoubleSlot(ban, d, p) ? " · 두 교시 연속" : ""}</div>
-      <label class="study-label">선생님</label>
-      <div class="tt-teacher">${alt
-        ? (cur ? `<b>${esc(cur)}</b> <span class="ev-hint">이번 주</span>` : `${esc(alt.join(" · "))} <span class="ev-hint">격주로 바뀌어요 · 이번 주는 아직 정해지지 않았어요</span>`)
+      <div class="asg-body">${ban}반 · ${d}요일 ${p}교시 (${st}–${en})</div>
+      <label class="study-label">선생님${alt ? " (이번 주)" : ""}</label>
+      <div class="tt-teacher">${now ? `<b>${esc(now)}</b>` : multi
+        ? `${esc(list.join(" · "))} <span class="ev-hint">${alt ? "격주로 바뀌어요 · " : ""}아직 정해지지 않았어요</span>`
         : `<b>${esc(TT_TEACHERS[s] || "정보 없음")}</b>`}</div>
-      ${mine && !expired ? `
-        <label class="study-label">이번 주 이 수업 선생님 고르기</label>
-        <div class="study-row tt-pick">${alt.map((t) => `<button class="study-btn${cur === t ? " primary" : ""}" data-tpick="${esc(t)}">${esc(t)}</button>`).join("")}</div>
-        <div class="study-foot" style="text-align:left">고르면 ${ban}반 친구들 시간표에도 적용되고, 한 교시 · 두 교시 수업과 다음 주들은 격주로 알아서 바뀌어요. 기말고사 주간 전까지 쓰여요.</div>` : ""}
-      ${alt && expired ? `<div class="study-foot" style="text-align:left">기말고사 주간이 지나 고른 선생님은 더 쓰지 않아요.</div>` : ""}`);
+      ${pick}
+      ${mine ? `<div class="study-foot" style="text-align:left">고르면 ${ban}반 친구들 시간표에도 적용돼요. 같은 선생님을 다시 누르면 지워져요.</div>` : ""}`);
     document.querySelectorAll("[data-tpick]").forEach((b) => b.onclick = async () => {
-      const t = b.dataset.tpick;
-      const dbl = isDoubleSlot(ban, d, p) ? t : otherOf(s, t);
+      const date = b.dataset.tdate, key = `${ban}|${d}|${p}|${date}`;
+      const t = ttPicks.get(key) === b.dataset.tpick ? null : b.dataset.tpick;   // 같은 걸 다시 누르면 지움
       b.disabled = true;
-      const { error } = await sb.rpc("set_tt_pick", { p_ban: ban, p_subject: s, p_double_teacher: dbl, p_week: mondayKey() });
+      const { error } = await sb.rpc("set_tt_teacher", { p_ban: ban, p_day: d, p_period: p, p_on_date: date, p_teacher: t });
       if (error) { b.disabled = false; return toast("저장하지 못했어요. 잠시 뒤 다시 시도해 주세요", true); }
-      ttPicks.set(`${ban}|${s}`, { ban, subject: s, double_teacher: dbl, week: mondayKey() });
-      toast(`${ban}반 친구들 시간표에도 적용했어요`);
+      if (t) ttPicks.set(key, t); else ttPicks.delete(key);
+      toast(t ? `${ban}반 친구들 시간표에도 적용했어요` : "선택을 지웠어요");
+      const y = $("studyModal").querySelector(".study-sheet")?.scrollTop || 0;
       draw();
+      const sheet = $("studyModal").querySelector(".study-sheet"); if (sheet) sheet.scrollTop = y;
     });
   };
   draw();
-  if (alt) { loadAcademic(); await loadTtPicks(); if ($("studyModal").classList.contains("show")) draw(); }
+  if (multi) {
+    await Promise.all([loadAcademic(), loadTtPicks()]);
+    if ($("studyModal").classList.contains("show")) draw();
+  }
 }
 // 한 반의 시간표 표. 42기 사이트의 시간표(index.html 의 table.timetable · .class-cell · .color-N · 과목 범례)와 같은 모양입니다.
 // 칸 아래 작은 줄은 42기의 분반 자리에 그 과목 선생님을, 수업 외 활동(자율 · 동아리 · R&E)은 '전체'를 씁니다.
