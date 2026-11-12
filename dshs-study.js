@@ -1365,7 +1365,7 @@ function ttGridHtml(ban = myBan()) {
       if (!s) return `<td><div class="empty-cell"></div></td>`;
       if (!isSubject43(s)) return `<td><div class="class-cell common-cell"><div class="subj-name">${esc(s)}</div><div class="ban-name">전체</div></div></td>`;
       // 선생님 이름은 칸을 누르면 나옵니다 (openTtCell)
-      return `<td><div class="class-cell color-${colorIdx43(s)}" data-tcell="${ban}|${d}|${p}"><div class="subj-name">${esc(s)}</div>${ALT_PAIRS[s] ? '<div class="ban-name">격주</div>' : ""}</div></td>`;
+      return `<td><div class="class-cell color-${colorIdx43(s)}" data-tcell="${ban}|${d}|${p}"><div class="subj-name">${esc(s)}</div></div></td>`;
     }).join("") + "</tr>";
   }
   const used = SUBJECTS_43.map(([s]) => s).filter((s) => Object.values(tt).includes(s));
