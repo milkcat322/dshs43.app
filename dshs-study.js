@@ -1207,11 +1207,16 @@ const TT_PERIODS = 9;   // 정규 수업 1~9교시 (야간 자습 10~12교시는
 const myBan = () => (me?.student_id ? Math.floor(me.student_id / 100) % 10 : 0);
 // 내 반 시간표: { "월-1": "국어", … }
 function myTimetable() {
-  const t = TIMETABLE_43[myBan()];
+  return classTimetable(myBan());
+}
+// 그 반 시간표: { "월-1": "국어", … } (없으면 빈 것)
+function classTimetable(ban) {
+  const t = TIMETABLE_43[ban];
   const out = {};
   if (t) for (const d of TT_DAYS) (t[d] || "").split(",").forEach((c, i) => { if (c.trim()) out[`${d}-${i + 1}`] = c.trim(); });
   return out;
 }
+const banOf = (sid) => Math.floor(sid / 100) % 10;
 // 1학년은 모든 과목이 필수(보통기본필수)입니다.
 const SUBJ_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#60a5fa", "#fb923c", "#facc15", "#6ee7b7", "#c4b5fd", "#fca5a5", "#a5b4fc", "#5eead4", "#fbbf24"];
 // 과목 → 색. 수업 외 활동(자율 · 동아리 · R&E)은 회색
@@ -1223,17 +1228,14 @@ const subjColor = (name) => {
 const semesterLabel = () => { const m = new Date().getMonth() + 1; return m >= 3 && m < 8 ? "1학기" : "2학기"; };
 let ttTab = "tt";   // 시간표 탭 안의 칸: tt 시간표 · gpa 학점 계산 · wp 배경화면
 
-function ttGridHtml() {
-  const tt = myTimetable();
-  const empty = !Object.keys(tt).length;
+// 시간표 표. cell(요일, 교시) 가 { label, color, sub } 를 돌려주면 그 칸을 칠합니다 (없으면 빈 칸)
+function ttTableHtml(cell, emptyText = "", last = 7) {
   const today = TT_DAYS[new Date().getDay() - 1];
-  const last = Math.max(7, ...Object.keys(tt).map((k) => +k.split("-")[1]));
-  const rows = Array.from({ length: Math.min(last, TT_PERIODS) }, (_, i) => {
+  const rows = Array.from({ length: Math.min(Math.max(7, last), TT_PERIODS) }, (_, i) => {
     const p = i + 1, [s, e] = PERIOD_TIME[p];
     return `<tr><th class="tt-p"><b>${p}</b><small>${s}<br>${e}</small></th>${TT_DAYS.map((d) => {
-      const code = tt[`${d}-${p}`];
-      const c = code ? subjColor(code) : "";
-      return `<td class="${d === today ? "tt-today" : ""}">${code ? `<span class="tt-cell" style="background:${c}22;border-color:${c}66;color:${c}">${esc(code)}${TT_TEACHERS[code] ? `<small>${esc(TT_TEACHERS[code])}</small>` : ""}</span>` : ""}</td>`;
+      const x = cell(d, p);
+      return `<td class="${d === today ? "tt-today" : ""}">${x ? `<span class="tt-cell" style="background:${x.color}22;border-color:${x.color}66;color:${x.color}">${esc(x.label)}${x.sub ? `<small>${esc(x.sub)}</small>` : ""}</span>` : ""}</td>`;
     }).join("")}</tr>`;
   }).join("");
   return `<div class="tt-wrap">
@@ -1241,15 +1243,116 @@ function ttGridHtml() {
         <thead><tr><th></th>${TT_DAYS.map((d) => `<th class="${d === today ? "tt-today" : ""}">${d}</th>`).join("")}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
-      ${empty ? `<div class="tt-empty">${myBan() ? `${myBan()}반 시간표는 아직 없어요` : "시간표가 아직 없어요"}</div>` : ""}
+      ${emptyText ? `<div class="tt-empty">${esc(emptyText)}</div>` : ""}
     </div>`;
+}
+const lastPeriod = (tt) => Math.max(7, ...Object.keys(tt).map((k) => +k.split("-")[1]));
+// 한 반의 시간표 표 (과목 + 그 과목 선생님)
+function ttGridHtml(ban = myBan()) {
+  const tt = classTimetable(ban);
+  const empty = !Object.keys(tt).length;
+  return ttTableHtml((d, p) => {
+    const code = tt[`${d}-${p}`];
+    return code ? { label: code, color: subjColor(code), sub: TT_TEACHERS[code] } : null;
+  }, empty ? (ban ? `${ban}반 시간표는 아직 없어요` : "시간표가 아직 없어요") : "", lastPeriod(tt));
+}
+
+// ---------- 시간표 검색 ----------
+// 이름 · 학번 → 그 학생의 반 시간표와 위치, '3반' → 그 반 시간표와 명단, 과목 → 그 수업이 있는 반.
+// ttView 가 null 이면 내 시간표입니다.
+let ttView = null;   // { type: "student", sid } | { type: "ban", ban } | { type: "subject", subject }
+function ttFind(q) {
+  q = q.trim().replace(/\s+/g, " ");
+  if (!q) return [];
+  const out = [];
+  const ban = q.match(/^([1-6])\s*반?$/);
+  if (ban) out.push({ type: "ban", ban: +ban[1], label: `1학년 ${ban[1]}반`, meta: "반 시간표 · 명단" });
+  if (/^\d{4}$/.test(q)) {
+    const p = roster().find((x) => x.sid === +q);
+    if (p) out.push({ type: "student", sid: p.sid, label: p.name, meta: `${p.sid} · ${banOf(p.sid)}반` });
+  }
+  const nq = q.replace(/\s/g, "");
+  for (const [s] of SUBJECTS_43) if (s.replace(/\s/g, "").includes(nq)) out.push({ type: "subject", subject: s, label: s, meta: "과목 · 수업 있는 반" });
+  if (!/^\d+$/.test(q)) for (const p of roster()) if (p.name.includes(q)) out.push({ type: "student", sid: p.sid, label: p.name, meta: `${p.sid} · ${banOf(p.sid)}반` });
+  return out.slice(0, 12);
+}
+function ttSearchHtml() {
+  return `<div class="tt-search">
+      <input class="study-input" id="ttQ" placeholder="이름 · 학번 · 반 · 과목 검색 (예: 김민준, 1203, 3반, 물리)" autocomplete="off" enterkeyhint="search">
+      <div class="tt-sugg" id="ttSugg"></div>
+    </div>`;
+}
+function bindTtSearch() {
+  const q = $("ttQ"), box = $("ttSugg");
+  if (!q) return;
+  const show = () => {
+    const hits = ttFind(q.value);
+    box.innerHTML = hits.map((h, i) => `<button class="pick-item" data-hit="${i}">${esc(h.label)}<span class="pick-meta">${esc(h.meta)}</span></button>`).join("")
+      || (q.value.trim() ? `<div class="tt-sugg-none">찾는 학생 · 반 · 과목이 없어요</div>` : "");
+    box.querySelectorAll("[data-hit]").forEach((b) => b.onclick = () => openTtView(hits[+b.dataset.hit]));
+  };
+  q.oninput = show;
+  q.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { const h = ttFind(q.value); if (h.length) openTtView(h[0]); } };
+}
+function openTtView(v) {
+  ttView = v ? { type: v.type, sid: v.sid, ban: v.ban, subject: v.subject } : null;
+  renderTimetable();
+  scrollTo({ top: 0 });
+}
+function ttOtherHtml(v) {
+  const back = `<button class="study-btn tt-back" id="ttBack">← 내 시간표</button>`;
+  if (v.type === "student") {
+    const p = roster().find((x) => x.sid === v.sid) || { sid: v.sid, name: String(v.sid) };
+    const ban = banOf(p.sid);
+    return `${back}
+      <div class="student-profile">
+        <div class="student-avatar">${esc(p.name[0])}</div>
+        <div class="student-info"><h2>${esc(p.name)}</h2><div class="student-meta">학번 ${p.sid} · 1학년 ${ban}반 <span class="st-loc" data-st="${p.sid}"></span></div></div>
+      </div>
+      ${ttGridHtml(ban)}`;
+  }
+  if (v.type === "ban") {
+    const list = roster().filter((x) => banOf(x.sid) === v.ban);
+    return `${back}
+      <div class="student-profile">
+        <div class="student-avatar subj-avatar">${v.ban}</div>
+        <div class="student-info"><h2>1학년 ${v.ban}반</h2><div class="student-meta">${list.length}명</div></div>
+      </div>
+      ${ttGridHtml(v.ban)}
+      <div class="study-section">${v.ban}반 학생 <span class="tt-hint">— 누르면 시간표</span></div>
+      <div class="tt-people">${list.map((x) => `<button class="ban-chip" data-sid="${x.sid}">${esc(x.name)}<small>${x.sid}</small><span class="st-loc" data-st="${x.sid}"></span></button>`).join("")}</div>`;
+  }
+  // 과목: 요일 · 교시마다 그 수업이 있는 반
+  const s = v.subject, color = subjColor(s);
+  const slots = {};
+  for (const ban of Object.keys(TIMETABLE_43)) {
+    const tt = classTimetable(+ban);
+    for (const [k, c] of Object.entries(tt)) if (c === s) (slots[k] ||= []).push(`${ban}반`);
+  }
+  const credits = SUBJECTS_43.find(([x]) => x === s)?.[1];
+  return `${back}
+    <div class="student-profile">
+      <div class="student-avatar subj-avatar">📘</div>
+      <div class="student-info"><h2>${esc(s)}</h2><div class="student-meta">${credits}학점 · ${esc(TT_TEACHERS[s] || "")} 선생님</div></div>
+    </div>
+    ${ttTableHtml((d, p) => (slots[`${d}-${p}`] ? { label: slots[`${d}-${p}`].join(" · "), color } : null),
+      Object.keys(slots).length ? "" : "이 과목 수업이 시간표에 없어요", Math.max(7, ...Object.keys(slots).map((k) => +k.split("-")[1])))}
+    <div class="study-foot">6반 시간표는 아직 없어 빠져 있어요</div>`;
 }
 
 function renderTimetable() {
+  if (ttView) {
+    $("studyView").innerHTML = ttSearchHtml() + ttOtherHtml(ttView);
+    bindTtSearch();
+    $("ttBack").onclick = () => openTtView(null);
+    $("studyView").querySelectorAll("[data-sid]").forEach((b) => b.onclick = () => openTtView({ type: "student", sid: +b.dataset.sid }));
+    paintStatus($("studyView"));
+    return;
+  }
   const sid = me?.student_id;
   const name = me?.name || "";
   const weekly = Object.values(myTimetable()).filter(isSubject43).length;   // 수업 외 활동은 빼고
-  $("studyView").innerHTML = `
+  $("studyView").innerHTML = ttSearchHtml() + `
     <div class="student-profile">
       <div class="student-avatar">${esc(name[0] || "?")}</div>
       <div class="student-info"><h2>${esc(name)}</h2><div class="student-meta">학번 ${esc(sid ?? "")} · 1학년 ${myBan() ? `${myBan()}반 · ` : ""}${semesterLabel()}</div></div>
@@ -1273,6 +1376,7 @@ function renderTimetable() {
     $("studyView").querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${ttTab}`));
     if (ttTab === "wp") generateWallpaper();
   });
+  bindTtSearch();
   renderGpa();
   bindWallpaper();
   if (ttTab === "wp") generateWallpaper();
@@ -1497,7 +1601,7 @@ function openStudy(p) {
   $("studyView").style.display = "block";
   document.body.classList.add("study-open");
   if (page === "meal") { mealDay = null; renderMeal(); renderNav(); return; }   // 급식은 NEIS 에서 바로 받습니다 (열 때마다 다음 끼니 날로)
-  if (page === "tt") { renderTimetable(); renderNav(); return; }   // 시간표는 서버 자료를 쓰지 않습니다
+  if (page === "tt") { ttView = null; renderTimetable(); renderNav(); return; }   // 시간표는 서버 자료를 쓰지 않습니다
   renderStudy();
   renderNav();
   // 받아 둔 내용(지난 화면 · 앞서 받은 것)이 있으면 '불러오는 중' 없이 바로 그리고, 서버에서 새로 받아 바뀐 것만 다시 그립니다
