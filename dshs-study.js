@@ -1260,9 +1260,9 @@ function ttGridHtml(ban = myBan()) {
 }
 
 // ---------- 시간표 검색 ----------
-// 이름 · 학번 → 그 학생의 반 시간표와 위치, '3반' → 그 반 시간표와 명단, 과목 → 그 수업이 있는 반.
+// 이름 · 학번 → 그 학생의 반 시간표와 위치, '3반' → 그 반 시간표와 명단. (과목 검색은 없앴습니다)
 // ttView 가 null 이면 내 시간표입니다.
-let ttView = null;   // { type: "student", sid } | { type: "ban", ban } | { type: "subject", subject }
+let ttView = null;   // { type: "student", sid } | { type: "ban", ban }
 function ttFind(q) {
   q = q.trim().replace(/\s+/g, " ");
   if (!q) return [];
@@ -1273,18 +1273,16 @@ function ttFind(q) {
     const p = roster().find((x) => x.sid === +q);
     if (p) out.push({ type: "student", sid: p.sid, label: p.name, meta: `${p.sid} · ${banOf(p.sid)}반` });
   }
-  const nq = q.replace(/\s/g, "");
-  for (const [s] of SUBJECTS_43) if (s.replace(/\s/g, "").includes(nq)) out.push({ type: "subject", subject: s, label: s, meta: "과목 · 수업 있는 반" });
   if (!/^\d+$/.test(q)) for (const p of roster()) if (p.name.includes(q)) out.push({ type: "student", sid: p.sid, label: p.name, meta: `${p.sid} · ${banOf(p.sid)}반` });
   return out.slice(0, 12);
 }
 // 42기 사이트의 검색 칸과 같은 모양 (index.html 의 .search-section · #nameInput · .btn-search · .suggestions)
 function ttSearchHtml() {
   return `<div class="search-section">
-      <div class="search-label">학생 · 학번 · 반 · 과목 검색</div>
+      <div class="search-label">학생 · 학번 · 반 검색</div>
       <div class="search-row">
         <div class="search-input-wrap">
-          <input type="text" id="nameInput" placeholder="이름·학번·과목 (예: 유준우, 1409, 물리)" autocomplete="off" enterkeyhint="search">
+          <input type="text" id="nameInput" placeholder="이름·학번·반 (예: 유준우, 1409, 3반)" autocomplete="off" enterkeyhint="search">
           <div class="suggestions" id="ttSugg"></div>
         </div>
         <button class="btn-search" id="ttGo" type="button">시간표 보기</button>
@@ -1295,12 +1293,12 @@ function bindTtSearch() {
   const q = $("nameInput"), box = $("ttSugg");
   if (!q) return;
   const tag = (h) => h.type === "student" ? `<span class="suggestion-id">${esc(h.sid)} · ${banOf(h.sid)}반</span>`
-    : `<span class="suggestion-tag"${h.type === "subject" ? ' style="background:rgba(251,146,60,0.15);color:#fb923c"' : ""}>${h.type === "ban" ? "반" : "과목"}</span>`;
+    : `<span class="suggestion-tag">반</span>`;
   const show = () => {
     const v = q.value.trim();
     const hits = ttFind(v).slice(0, 8);
-    box.innerHTML = hits.map((h, i) => `<div class="suggestion-item" data-hit="${i}"><span>${h.type === "subject" ? "📘 " : ""}${esc(h.label)}</span>${tag(h)}</div>`).join("")
-      || (v ? `<div class="tt-sugg-none">찾는 학생 · 반 · 과목이 없어요</div>` : "");
+    box.innerHTML = hits.map((h, i) => `<div class="suggestion-item" data-hit="${i}"><span>${esc(h.label)}</span>${tag(h)}</div>`).join("")
+      || (v ? `<div class="tt-sugg-none">찾는 학생 · 반이 없어요</div>` : "");
     box.classList.toggle("show", !!v);
     box.querySelectorAll("[data-hit]").forEach((b) => b.onclick = () => openTtView(hits[+b.dataset.hit]));
   };
@@ -1318,7 +1316,7 @@ function bindTtSearch() {
   }
 }
 function openTtView(v) {
-  ttView = v ? { type: v.type, sid: v.sid, ban: v.ban, subject: v.subject } : null;
+  ttView = v ? { type: v.type, sid: v.sid, ban: v.ban } : null;
   renderTimetable();
   scrollTo({ top: 0 });
 }
@@ -1345,22 +1343,7 @@ function ttOtherHtml(v) {
       <div class="study-section">${v.ban}반 학생 <span class="tt-hint">— 누르면 시간표</span></div>
       <div class="tt-people">${list.map((x) => `<button class="ban-chip" data-sid="${x.sid}">${esc(x.name)}<small>${x.sid}</small><span class="st-loc" data-st="${x.sid}"></span></button>`).join("")}</div>`;
   }
-  // 과목: 요일 · 교시마다 그 수업이 있는 반
-  const s = v.subject, color = subjColor(s);
-  const slots = {};
-  for (const ban of Object.keys(TIMETABLE_43)) {
-    const tt = classTimetable(+ban);
-    for (const [k, c] of Object.entries(tt)) if (c === s) (slots[k] ||= []).push(`${ban}반`);
-  }
-  const credits = SUBJECTS_43.find(([x]) => x === s)?.[1];
-  return `${back}
-    <div class="student-profile">
-      <div class="student-avatar subj-avatar">📘</div>
-      <div class="student-info"><h2>${esc(s)}</h2><div class="student-meta">${credits}학점 · ${esc(TT_TEACHERS[s] || "")} 선생님</div></div>
-    </div>
-    ${ttTableHtml((d, p) => (slots[`${d}-${p}`] ? { label: slots[`${d}-${p}`].join(" · "), color } : null),
-      Object.keys(slots).length ? "" : "이 과목 수업이 시간표에 없어요", Math.max(7, ...Object.keys(slots).map((k) => +k.split("-")[1])))}
-    <div class="study-foot">6반 시간표는 아직 없어 빠져 있어요</div>`;
+  return back;
 }
 
 function renderTimetable() {
