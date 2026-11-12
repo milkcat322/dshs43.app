@@ -1182,7 +1182,7 @@ const TT_PERIODS = 9;   // 정규 수업 1~9교시 (야간 자습 10~12교시는
 const SUBJ_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#60a5fa", "#fb923c", "#facc15", "#6ee7b7", "#c4b5fd", "#fca5a5", "#a5b4fc", "#5eead4", "#fbbf24"];
 const subjColor = (subject) => SUBJ_COLORS[Math.max(0, SUBJECTS_43.findIndex(([s]) => s === subject)) % SUBJ_COLORS.length];
 const semesterLabel = () => { const m = new Date().getMonth() + 1; return m >= 3 && m < 8 ? "1학기" : "2학기"; };
-let ttTab = "tt";   // 시간표 탭 안의 칸: tt 시간표 · gpa 학점 계산 · subj 과목 목록 · wp 배경화면
+let ttTab = "tt";   // 시간표 탭 안의 칸: tt 시간표 · gpa 학점 계산 · wp 배경화면
 
 function ttGridHtml() {
   const empty = !Object.keys(TIMETABLE_43).length;
@@ -1204,15 +1204,6 @@ function ttGridHtml() {
     </div>`;
 }
 
-function ttSubjectsHtml() {
-  return `<div class="credit-sum">
-      <div class="num">${TOTAL_CREDITS}</div>
-      <div class="tx"><b>이수 학점 합계</b><br>${SUBJECTS_43.length}과목 · 1학년 ${semesterLabel()} · 모두 필수 과목</div>
-    </div>
-    <div class="classes-grid">${SUBJECTS_43.map(([s, c]) => `<div class="class-card"><div class="class-dot" style="background:${subjColor(s)}"></div>
-      <div class="class-card-name">${esc(s)}</div><div class="class-credit">${c}학점</div><div class="class-card-ban">필수</div></div>`).join("")}</div>`;
-}
-
 function renderTimetable() {
   const sid = me?.student_id;
   const name = me?.name || "";
@@ -1229,12 +1220,11 @@ function renderTimetable() {
       <div class="stat-chip"><span class="stat-num">${weekly || "–"}</span><span class="stat-label">주간 수업 교시</span></div>
     </div>
     <div class="tabs">
-      ${[["tt", "📅 시간표"], ["gpa", "🎓 학점 계산"], ["subj", "📚 과목 목록"], ["wp", "🖼 배경화면"]].map(([k, l]) =>
+      ${[["tt", "📅 시간표"], ["gpa", "🎓 학점 계산"], ["wp", "🖼 배경화면"]].map(([k, l]) =>
         `<button class="tab-btn${ttTab === k ? " active" : ""}" data-ttab="${k}">${l}</button>`).join("")}
     </div>
     <div class="tab-panel${ttTab === "tt" ? " active" : ""}" id="panel-tt">${ttGridHtml()}</div>
     <div class="tab-panel${ttTab === "gpa" ? " active" : ""}" id="panel-gpa"></div>
-    <div class="tab-panel${ttTab === "subj" ? " active" : ""}" id="panel-subj">${ttSubjectsHtml()}</div>
     <div class="tab-panel${ttTab === "wp" ? " active" : ""}" id="panel-wp">${wpPanelHtml()}</div>`;
   $("studyView").querySelectorAll("[data-ttab]").forEach((b) => b.onclick = () => {
     ttTab = b.dataset.ttab;
@@ -1262,27 +1252,33 @@ function gpaLoad() {
   return Object.fromEntries(SUBJECTS_43.map(([s]) => [s, "A+"]));
 }
 function gpaSave(st) { try { localStorage.setItem(gpaKey(), JSON.stringify(st)); } catch {} }
+// P/F 과목: 전원 Pass 라 A+(4.3)로 넣어 계산하고, 학점 계산 칸에는 보이지 않습니다
+const PF_43 = new Set(["진로와직업", "영어II"]);
 function renderGpa() {
   const box = $("panel-gpa");
   if (!box) return;
   const st = gpaLoad();
+  for (const s of PF_43) st[s] = "A+";
+  const graded = SUBJECTS_43.filter(([s]) => !PF_43.has(s));
   let cred = 0, pts = 0;
   for (const [s, c] of SUBJECTS_43) if (st[s] in GRADE_PT) { cred += c; pts += c * GRADE_PT[st[s]]; }
+  const pfCred = SUBJECTS_43.filter(([s]) => PF_43.has(s)).reduce((a, [, c]) => a + c, 0);
   box.innerHTML = `
     <div class="gpa-hero">
       <div><div class="gpa-big">${cred ? (pts / cred).toFixed(2) : "–"}</div><div class="gpa-max">/ 4.30</div></div>
       <div class="gpa-hero-tx"><b>평균 학점</b><br>입력한 ${cred}학점 기준 · 전체 ${TOTAL_CREDITS}학점<br>${cred < TOTAL_CREDITS
         ? `<span style="color:var(--text-muted)">아직 ${TOTAL_CREDITS - cred}학점이 미입력이에요</span>` : '<span style="color:var(--accent3)">모든 과목 입력 완료</span>'}</div>
     </div>
-    ${SUBJECTS_43.map(([s, c]) => `<div class="gpa-row">
+    ${graded.map(([s, c]) => `<div class="gpa-row">
       <div class="gpa-head"><span class="gpa-name">${esc(s)}</span><span class="gpa-cred">${c}학점</span></div>
       <div class="gpa-grades">${GRADES.map(([g]) => `<button class="gpa-g${st[s] === g ? " on" : ""}${g === "F" ? " none" : ""}" data-gs="${esc(s)}" data-gg="${g}">${g}</button>`).join("")}</div>
     </div>`).join("")}
+    <div class="pf-note">P/F 과목 <b>${[...PF_43].join(" · ")}</b> (${pfCred}학점)은 전원 Pass라서 <b>A+(4.3)</b>로 자동 계산돼요. 따로 고를 필요 없어요.</div>
     <div class="gpa-actions">
       <button class="gpa-act" id="gpaAll">전부 A+로</button>
       <button class="gpa-act" id="gpaClear">전체 해제</button>
     </div>
-    <div class="gpa-note"><b>계산 방식</b> — (과목 학점 × 등급 평점)을 모두 더한 뒤, 등급을 고른 과목의 학점 합으로 나눠요. 1학년은 모든 과목이 필수라 12과목이 모두 들어가요. 등급을 고르지 않은 과목은 계산에서 빠지고, 같은 등급을 다시 누르면 해제돼요. 고른 등급은 이 기기에만 저장돼요.</div>`;
+    <div class="gpa-note"><b>계산 방식</b> — (과목 학점 × 등급 평점)을 모두 더한 뒤, 등급을 고른 과목의 학점 합으로 나눠요. 1학년은 모든 과목이 필수라 12과목이 모두 들어가고, P/F 과목은 A+로 계산돼요. 등급을 고르지 않은 과목은 계산에서 빠지고, 같은 등급을 다시 누르면 해제돼요. 고른 등급은 이 기기에만 저장돼요.</div>`;
   box.querySelectorAll("[data-gs]").forEach((b) => b.onclick = () => {
     const cur = gpaLoad();
     if (cur[b.dataset.gs] === b.dataset.gg) delete cur[b.dataset.gs]; else cur[b.dataset.gs] = b.dataset.gg;
