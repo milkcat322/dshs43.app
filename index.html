@@ -541,12 +541,9 @@
   .tt-empty { position: absolute; left: 52px; right: 0; top: 50%; transform: translateY(-50%); text-align: center; font-size: 13px; color: var(--text-muted); pointer-events: none; }
   .tt-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 46px; margin: 3px 0; padding: 3px 2px; border: 1px solid; border-radius: 8px; font-size: 11px; font-weight: 700; line-height: 1.2; word-break: keep-all; }
   .tt-cell small { font-size: 8.5px; font-weight: 500; line-height: 1.25; opacity: 0.8; }
-  /* 시간표 검색 */
-  .tt-search { position: relative; margin-bottom: 14px; }
-  .tt-search .study-input { width: 100%; margin: 0; }
-  .tt-sugg { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-  .tt-sugg:empty { display: none; }
-  .tt-sugg-none { font-size: 12.5px; color: var(--text-muted); padding: 6px 4px; }
+  /* 시간표 검색 (42기 사이트의 검색 칸과 같은 모양: .search-section · #nameInput · .btn-search · .suggestions) */
+  .search-section { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 24px; margin-bottom: 20px; position: relative; }
+  .tt-sugg-none { padding: 12px 20px; font-size: 13px; color: var(--text-muted); }
   .tt-back { margin-bottom: 12px; }
   .tt-hint { font-size: 11px; font-weight: 400; color: var(--text-muted); }
   .tt-people { display: flex; flex-wrap: wrap; gap: 6px; }

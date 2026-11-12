@@ -785,9 +785,7 @@ async function loadStatus(force = false) {
   paintStatus();
   saveSnap();
   loadMySeat();
-  // 43기 사이트에는 아직 다른 학생의 위치 · 자리를 보여 주는 화면(시간표 검색)이 없어서 자리 공개 동의 창은 띄우지 않습니다.
-  // 시간표가 생기면 아래 줄을 다시 켭니다. 공개는 설정의 '자습실 자리 공개'에서 켤 수 있어요.
-  // if (!askSeatConsent.t) askSeatConsent.t = setTimeout(askSeatConsent, 2500);
+  if (!askSeatConsent.t) askSeatConsent.t = setTimeout(askSeatConsent, 2500);   // 자리 공개가 꺼져 있으면 켜 달라고 묻기
 }
 
 // ---------- 자습실 자리 (seats.sql) ----------
@@ -1018,19 +1016,23 @@ async function saveSeatPublic(on, quiet = false) {
   return true;
 }
 
-// 처음 한 번 동의 창으로 묻습니다. 동의 · 공개하지 않기 모두 계정에 남아(seat_shares.asked) 어느 기기에서도 다시 묻지 않고,
-// 그 뒤로는 설정의 '자습실 자리 공개'에서 켜고 끕니다. ✕ 로 닫으면 다음에 열 때 다시 묻습니다.
+// 자리 공개가 꺼져 있으면 동의 창으로 켜 달라고 묻습니다. '공개하지 않기'를 골라도 꺼져 있는 동안은
+// 이 기기에서 하루 한 번 다시 묻습니다(SEAT_ASK_KEY). 설정의 '자습실 자리 공개'에서도 켜고 끕니다.
+const SEAT_ASK_KEY = "dshs-seat-ask";
 function askSeatConsent() {
   const sid = me?.student_id, sh = seatShares?.get(sid);
-  if (!sid || me.is_admin || !seatShares || sh?.public || sh?.asked || askSeatConsent.shown) return;
+  if (!sid || me.is_admin || otherCohort() || !seatShares || sh?.public || askSeatConsent.shown) return;
+  const today = dayKey(new Date());
+  try { if (localStorage.getItem(SEAT_ASK_KEY) === today) return; } catch {}
   // 업데이트 소식 · 다른 창이 떠 있으면 닫힐 때까지 기다립니다
   const busy = () => ["studyModal", "updModal"].some((id) => $(id)?.classList.contains("show"));
   if (busy() || document.hidden) { clearTimeout(askSeatConsent.t); askSeatConsent.t = setTimeout(askSeatConsent, 3000); return; }
   askSeatConsent.shown = true;
+  try { localStorage.setItem(SEAT_ASK_KEY, today); } catch {}
   openSheet("자습실 자리 공개", `<div class="seat-ask">
     <div class="asg-body">dshs.app 에서 신청한 내 자습실 자리(예: a101)를 친구들에게 보여 줄까요?</div>
     <ul>
-      <li>로그인한 친구들이 내 이름 옆에서 내 자리를 볼 수 있어요</li>
+      <li>로그인한 43기 학생이 내 이름 옆과 시간표 검색에서 내 자리를 볼 수 있어요</li>
       <li>자리는 매주 금요일 15시에 새로 신청한 자리로 바뀌어요</li>
       <li>dshs.app 계정이 연결돼 있어야 자리를 받아 올 수 있어요</li>
       <li>나중에 설정에서 언제든 끌 수 있어요</li>
@@ -1276,23 +1278,44 @@ function ttFind(q) {
   if (!/^\d+$/.test(q)) for (const p of roster()) if (p.name.includes(q)) out.push({ type: "student", sid: p.sid, label: p.name, meta: `${p.sid} · ${banOf(p.sid)}반` });
   return out.slice(0, 12);
 }
+// 42기 사이트의 검색 칸과 같은 모양 (index.html 의 .search-section · #nameInput · .btn-search · .suggestions)
 function ttSearchHtml() {
-  return `<div class="tt-search">
-      <input class="study-input" id="ttQ" placeholder="이름 · 학번 · 반 · 과목 검색 (예: 유준우, 1409, 물리)" autocomplete="off" enterkeyhint="search">
-      <div class="tt-sugg" id="ttSugg"></div>
+  return `<div class="search-section">
+      <div class="search-label">학생 · 학번 · 반 · 과목 검색</div>
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <input type="text" id="nameInput" placeholder="이름·학번·과목 (예: 유준우, 1409, 물리)" autocomplete="off" enterkeyhint="search">
+          <div class="suggestions" id="ttSugg"></div>
+        </div>
+        <button class="btn-search" id="ttGo" type="button">시간표 보기</button>
+      </div>
     </div>`;
 }
 function bindTtSearch() {
-  const q = $("ttQ"), box = $("ttSugg");
+  const q = $("nameInput"), box = $("ttSugg");
   if (!q) return;
+  const tag = (h) => h.type === "student" ? `<span class="suggestion-id">${esc(h.sid)} · ${banOf(h.sid)}반</span>`
+    : `<span class="suggestion-tag"${h.type === "subject" ? ' style="background:rgba(251,146,60,0.15);color:#fb923c"' : ""}>${h.type === "ban" ? "반" : "과목"}</span>`;
   const show = () => {
-    const hits = ttFind(q.value);
-    box.innerHTML = hits.map((h, i) => `<button class="pick-item" data-hit="${i}">${esc(h.label)}<span class="pick-meta">${esc(h.meta)}</span></button>`).join("")
-      || (q.value.trim() ? `<div class="tt-sugg-none">찾는 학생 · 반 · 과목이 없어요</div>` : "");
+    const v = q.value.trim();
+    const hits = ttFind(v).slice(0, 8);
+    box.innerHTML = hits.map((h, i) => `<div class="suggestion-item" data-hit="${i}"><span>${h.type === "subject" ? "📘 " : ""}${esc(h.label)}</span>${tag(h)}</div>`).join("")
+      || (v ? `<div class="tt-sugg-none">찾는 학생 · 반 · 과목이 없어요</div>` : "");
+    box.classList.toggle("show", !!v);
     box.querySelectorAll("[data-hit]").forEach((b) => b.onclick = () => openTtView(hits[+b.dataset.hit]));
   };
+  const go = () => { const h = ttFind(q.value); if (h.length) openTtView(h[0]); else show(); };
   q.oninput = show;
-  q.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { const h = ttFind(q.value); if (h.length) openTtView(h[0]); } };
+  q.onkeydown = (e) => {
+    if (e.key === "Enter" && !e.isComposing) go();
+    if (e.key === "Escape") box.classList.remove("show");
+  };
+  $("ttGo").onclick = go;
+  // 검색 칸 밖을 누르면 목록을 닫습니다
+  if (!bindTtSearch.bound) {
+    bindTtSearch.bound = true;
+    document.addEventListener("click", (e) => { if (!e.target.closest(".search-input-wrap")) $("ttSugg")?.classList.remove("show"); });
+  }
 }
 function openTtView(v) {
   ttView = v ? { type: v.type, sid: v.sid, ban: v.ban, subject: v.subject } : null;

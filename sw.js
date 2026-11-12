@@ -1,7 +1,7 @@
 // dshs43.app — 서비스 워커
 // 프론트 파일(index.html · dshs-study.js 등)을 바꾼 뒤에는 아래 CACHE 버전 숫자를 꼭 올려주세요.
 // 42기 사이트(dshs-study-v…)와 이름이 겹치지 않게 dshs43- 으로 시작합니다.
-const CACHE = 'dshs43-v9';
+const CACHE = 'dshs43-v10';
 
 const SHELL = [
   './',
