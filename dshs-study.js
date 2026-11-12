@@ -492,7 +492,7 @@ function allClassList() {
 function sortClasses(list) {
   return list.sort((a, b) => a.subject.localeCompare(b.subject, "ko") || (a.ban || "").localeCompare(b.ban || "", "ko"));
 }
-const banLabel = (ban) => ban || "전체 분반";
+const banLabel = (ban) => ban || "전체";   // 43기 수행평가: 전체 또는 'n반' (cohort43ban.sql)
 const mySubjects = () => [...new Set(myClasses.map((c) => c.subject))];
 // 수행평가를 보지 않는 과목은 수행평가 탭과 추가 화면에서 뺍니다.
 const NO_ASG_SUBJECTS = new Set(["체육"]);
@@ -2815,7 +2815,7 @@ function openNewForm(a) {
   const noDue = !!a && !a.due_at;
   // 고칠 때 제출처: 목록에 있으면 그걸 고르고, 없으면 "그 외" 에 적어 둡니다
   const place = a?.submit_to ? (SUBMIT_PLACES.includes(a.submit_to) ? a.submit_to : "etc") : "";
-  // 내 수강 과목만. 43기는 분반이 없어 모두 ban: null(전체 분반)로 올라갑니다
+  // 내 수강 과목만. 과목을 고른 뒤 대상(전체 · 우리 반)을 고릅니다
   const opts = a ? [{ subject: a.subject, ban: a.ban ?? null }] : asgClasses();
   view = "form";
   if (!opts.length) {
@@ -2829,8 +2829,13 @@ function openNewForm(a) {
     <div class="asg-card">
       <label class="study-label">과목</label>
       <select class="study-input" id="nClass"${a ? " disabled" : ""}>
-        ${opts.map((o, i) => `<option value="${i}">${esc(o.subject)}${o.ban ? ` · ${esc(o.ban)}` : ""}</option>`).join("")}
+        ${opts.map((o, i) => `<option value="${i}">${esc(o.subject)}${a && o.ban ? ` · ${esc(o.ban)}` : ""}</option>`).join("")}
       </select>
+      ${a || !myBan() ? "" : `<label class="study-label">대상</label>
+      <div class="seg" id="nScope">
+        <button type="button" class="seg-btn on" data-scope="">전체 (43기 모두)</button>
+        <button type="button" class="seg-btn" data-scope="${myBan()}반">우리 반만 (${myBan()}반)</button>
+      </div>`}
       <label class="study-label">제목</label>
       <input class="study-input" id="nTitle" maxlength="120" placeholder="예: 3단원 실험 보고서 제출" value="${esc(a?.title ?? "")}">
       <label class="study-label">설명 (선택)</label>
@@ -2865,12 +2870,19 @@ function openNewForm(a) {
   $("nSubmit").onchange = () => {
     $("nSubmitEtc").style.display = $("nSubmit").value === "etc" ? "block" : "none";
   };
+  // 대상: 전체(ban 비어 있음) 또는 우리 반('3반'). 반만 고르면 그 반 학생에게만 보여요 (cohort43ban.sql)
+  let scope = "";
+  document.querySelectorAll("#nScope [data-scope]").forEach((b) => b.onclick = () => {
+    scope = b.dataset.scope;
+    document.querySelectorAll("#nScope [data-scope]").forEach((x) => x.classList.toggle("on", x === b));
+  });
   $("nNoDue").onchange = () => {
     $("nDue").disabled = $("nNoDue").checked;
     if (!$("nNoDue").checked && !$("nDue").value) $("nDue").value = `${dayKey(dueDay)}T23:59`;
   };
   $("nSave").onclick = async () => {
-    const { subject, ban } = opts[+$("nClass").value];
+    const { subject } = opts[+$("nClass").value];
+    const ban = scope || null;
     const title = $("nTitle").value.trim();
     const noDueNow = $("nNoDue").checked;
     const due = $("nDue").value;
