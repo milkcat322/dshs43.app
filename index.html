@@ -544,6 +544,10 @@
   /* 43기 시간표: 42기 표 그대로, 분반 자리에 선생님 이름(2~3분)이 들어가므로 칸 높이를 내용에 맞춥니다 */
   .timetable .class-cell.class-cell { height: auto; min-height: 42px; cursor: default; }
   .timetable .class-cell:hover { transform: none; }
+  .timetable .class-cell[data-tcell] { cursor: pointer; }   /* 누르면 선생님 (openTtCell) */
+  .tt-teacher { font-size: 15px; line-height: 1.6; }
+  .tt-teacher .ev-hint { display: block; }
+  .tt-pick .study-btn { flex: 1; }
   .timetable .class-cell .ban-name { font-family: 'Noto Sans KR', sans-serif; line-height: 1.25; word-break: keep-all; }
   /* 시간표 검색 (42기 사이트의 검색 칸과 같은 모양: .search-section · #nameInput · .btn-search · .suggestions) */
   .search-section { background: var(--card); border: 1px solid var(--border); border-radius: 20px; padding: 24px; margin-bottom: 20px; position: relative; }
