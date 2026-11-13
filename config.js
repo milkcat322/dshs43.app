@@ -12,5 +12,5 @@ window.DSHS_CONFIG = {
   VAPID_PUBLIC_KEY: "BIX8--TywfEp92OPeHlIJjml8hzrk4YCFNxBsoMJ6ckn8nX-9cpm5voycfpD642uMRe5jCzAV2yDB_cj8agi4Fo",
   // 43기 관리자 사이트 (milkcat322/dshs43-admin, dshs-study 의 admin/ 을 --cohort 43 으로 묶은 것) · 이 학생 사이트 주소
   ADMIN_URL: "https://dshs43-admin.netlify.app",
-  STUDENT_URL: "https://dshs43.app",
+  STUDENT_URL: "https://dshs43.netlify.app",
 };

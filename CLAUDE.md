@@ -4,7 +4,7 @@
 
 ## 규칙
 
-- **저장소가 둘이다: beta = `origin`(milkcat322/dshs43-beta, 평소 개발 · push), 메인 = `prod`(milkcat322/dshs43.app → `dshs43.app`).** 개발은 beta 에 올려 `dshs43-beta.netlify.app` 에서 확인한다. 메인에는 사용자가 "메인 웹에 올려줘" 라고 할 때만 beta 의 `origin/main` 을 그대로 올린다: `git fetch origin prod` → `git log --oneline prod/main..origin/main` 으로 올라갈 커밋을 보여 주고 → `git push prod origin/main:main`. 메인 저장소를 직접 고치지 않는다. beta 도 실제 서비스 DB 를 쓴다. `prod/main..origin/main` 반대쪽(`origin/main..prod/main`)에 커밋이 있으면 올리지 말고 사용자에게 묻는다. 학사일정 자동 갱신(`.github/workflows/academic.yml`)은 beta 저장소에서만 돌아, 메인에는 올릴 때 반영된다.
+- **저장소가 둘이다: beta = `origin`(milkcat322/dshs43-beta, 평소 개발 · push), 메인 = `prod`(milkcat322/dshs43.app → `https://dshs43.netlify.app`).** 도메인 dshs43.app 은 사지 않았다 — 학생에게 안내하는 주소 · 코드의 주소는 모두 `dshs43.netlify.app` 이고, "dshs43.app" 은 사이트 이름(제목 · 로고)으로만 쓴다. 개발은 beta 에 올려 `dshs43-beta.netlify.app` 에서 확인한다. 메인에는 사용자가 "메인 웹에 올려줘" 라고 할 때만 beta 의 `origin/main` 을 그대로 올린다: `git fetch origin prod` → `git log --oneline prod/main..origin/main` 으로 올라갈 커밋을 보여 주고 → `git push prod origin/main:main`. 메인 저장소를 직접 고치지 않는다. beta 도 실제 서비스 DB 를 쓴다. `prod/main..origin/main` 반대쪽(`origin/main..prod/main`)에 커밋이 있으면 올리지 말고 사용자에게 묻는다. 학사일정 자동 갱신(`.github/workflows/academic.yml`)은 beta 저장소에서만 돌아, 메인에는 올릴 때 반영된다.
 
 - **실제 서비스 DB 를 42기와 함께 쓴다.** 로컬에서 실행해도 실제 DB 에 연결된다. 테스트 데이터를 만들면 반드시 지운다. 42기 학생 데이터에 영향을 주지 않게 조심한다.
 - DB(SQL) · RLS · Edge Function 은 이 저장소에 없다. 바꿔야 하면 `milkcat322/dshs-study` 에서 한다 (`cohort43.sql`, `supabase/functions/dshs-oauth` 의 `RETURN_OK` 등). 기수 구분 · 접근 범위는 화면이 아니라 DB 권한(RLS)으로 막는다.
